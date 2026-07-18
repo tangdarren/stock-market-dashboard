@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+.git/
+.github/
+server/.venv/
+server/artifacts/*.joblib
+server/artifacts/cache.db
+server/data/raw/
+.env
+.env.*
+!.env.example
+!server/.env.example
+.DS_Store

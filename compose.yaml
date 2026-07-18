@@ -1,0 +1,34 @@
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - '8000:8000'
+    environment:
+      # ALPHA_VANTAGE_API_KEY must be provided at deploy time — never commit it.
+      ALPHA_VANTAGE_API_KEY: ${ALPHA_VANTAGE_API_KEY:-}
+      ALPHA_VANTAGE_DAILY_BUDGET: ${ALPHA_VANTAGE_DAILY_BUDGET:-20}
+      ALPHA_VANTAGE_MIN_INTERVAL_SECONDS: ${ALPHA_VANTAGE_MIN_INTERVAL_SECONDS:-15}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
+      APP_ENV: ${APP_ENV:-development}
+    volumes:
+      # Mount trusted, project-generated artifacts. Never download third-party joblib files.
+      - ./server/artifacts:/srv/artifacts:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health').read()"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - '5173:80'
+    depends_on:
+      - backend

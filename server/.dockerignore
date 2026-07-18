@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+tests/
+.env
+.env.*
+!.env.example
+data/raw/
+artifacts/*.joblib
+artifacts/cache.db
+*.sqlite*

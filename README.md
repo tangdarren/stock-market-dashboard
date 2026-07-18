@@ -1,94 +1,167 @@
-# SPY Market Dashboard
+# SPY Forecast Lab
 
-A real-time market intelligence dashboard for traders, built with React 19 and TypeScript. Pulls live SPY data from the Webull OpenAPI to deliver pre-market analysis, trend detection, and overnight gap summaries — all in a polished dark-themed UI.
+An explainable machine-learning dashboard that forecasts SPY (S&P 500 ETF)
+direction for **the next trading day** and **five trading sessions ahead**. It
+was built as an educational project to demonstrate how to combine a modern
+React/TypeScript frontend with a small FastAPI machine-learning service — and
+to be honest about the limits of forecasting equity direction.
 
-![React](https://img.shields.io/badge/React-19-blue?logo=react)
-![TypeScript](https://img.shields.io/badge/TypeScript-6-blue?logo=typescript)
-![Vite](https://img.shields.io/badge/Vite-8-purple?logo=vite)
-![Tailwind](https://img.shields.io/badge/Tailwind_CSS-4-blue?logo=tailwindcss)
+> **Educational analysis, not financial advice.** Model output is probabilistic
+> and may be wrong. Past performance does not guarantee future results.
 
-## Features
+## What's inside
 
-- **Live SPY Quotes** — Real-time price, change, and volume data with 30-second auto-refresh via React Query
-- **Trend Analysis** — Algorithmic detection of uptrend, downtrend, or neutral market conditions
-- **Overnight Gap Detection** — Pre-market gap-up/gap-down identification with contextual summaries
-- **Market Status Awareness** — Adapts display based on market open/closed/pre-market state
-- **Interactive Education** — Trading fundamentals covering candlesticks, support/resistance, risk management, and volume analysis
-- **WebGL Animated Backgrounds** — GPU-accelerated gradient visuals using OGL
-- **Responsive Glass-Morphism UI** — Dark theme with backdrop-blur cards and scroll-triggered animations
+- **Explainable forecasts.** Each prediction ships with plain-English factors
+  (moving-average distance, momentum, volatility, volume) so you can see why
+  the model leaned up or down.
+- **Honest metrics.** Chronological hold-out evaluation, walk-forward
+  predictions, calibration curves, per-year breakdowns, per-confidence-bucket
+  accuracy, and comparisons against majority-class and persistence baselines.
+- **Educational backtest.** A simple `p(up) >= threshold` rule vs buy-and-hold,
+  with transaction costs and a "past performance…" disclaimer.
+- **Live Alpha Vantage snapshot.** Cached, rate-limited, key-hidden.
+- **Backend-only secrets.** The Alpha Vantage API key lives on the server, and
+  the frontend never sees it.
 
-## Tech Stack
+## Screenshot
 
-| Category | Technologies |
-|----------|-------------|
-| Framework | React 19, TypeScript 6 |
-| Build | Vite 8 |
-| Styling | Tailwind CSS 4 |
-| Routing | React Router 7 |
-| Data Fetching | TanStack React Query 5 |
-| Animation | Framer Motion, GSAP, OGL (WebGL) |
-| API | Webull OpenAPI |
+![Screenshot placeholder](public/darren.png)
 
 ## Architecture
 
 ```
-src/
-├── app/              # Layouts, providers, router config
-├── components/       # Shared UI (Navbar, Footer, Badge, Container)
-├── features/
-│   ├── market/       # Core domain — API types, hooks, components, utils
-│   ├── education/    # Trading education components
-│   ├── profile/      # User profile components
-│   └── ui/           # Reusable animated UI primitives
-├── hooks/            # App-wide custom hooks
-├── lib/              # API client, constants, utility functions
-├── mocks/            # Mock data fallback (no API key required)
-├── pages/            # Route-level page components
-└── styles/           # Global CSS and animation styles
+                              ┌──────────────────┐
+                              │  Alpha Vantage   │
+                              │  (upstream API)  │
+                              └────────▲─────────┘
+                                       │
+                                       │ cached + rate-limited
+                                       │
+┌──────────────┐    HTTPS      ┌───────┴────────┐    joblib    ┌─────────────┐
+│  React SPA   │◀──────────────│  FastAPI API   │◀─────────────│  Trained    │
+│  (Vite,      │──────────────▶│  (server/)     │              │  Models     │
+│  Tailwind)   │  JSON only    └────────────────┘              │  (artifacts)│
+└──────────────┘                                                └─────────────┘
 ```
 
-The project follows a **feature-based architecture** with clear separation between domain logic (`features/market/`), shared infrastructure (`lib/`), and presentation (`pages/`). Market data flows through custom hooks backed by React Query, with automatic polling and graceful fallback to mock data when API credentials are unavailable.
+- Frontend: `src/pages/daily/DailyDashboardPage.tsx` (route `/market`).
+- Feature-based frontend layout under `src/features/forecast/`.
+- Backend: `server/app/` (FastAPI, Pydantic, HTTPX, scikit-learn, SQLite).
+- Model artifacts: `server/artifacts/` (git-ignored, produced by the training
+  script).
 
-## Getting Started
+## Quick start
+
+Prerequisites: **Node 20+**, **Python 3.11+**, an
+[Alpha Vantage API key](https://www.alphavantage.co/support/#api-key)
+(free tier is enough).
 
 ```bash
-# Install dependencies
+# Frontend deps
 npm install
 
-# Start development server
-npm run dev
+# Backend virtualenv + deps
+python3.11 -m venv server/.venv
+source server/.venv/bin/activate
+pip install -e "server/.[dev,bootstrap]"
 
-# Type check
-npm run typecheck
+# Configure secrets
+cp server/.env.example server/.env       # then set ALPHA_VANTAGE_API_KEY
 
-# Build for production
-npm run build
+# Download historical training data (one-time, offline)
+python server/scripts/bootstrap_history.py
+
+# Train models (writes to server/artifacts/)
+python server/scripts/train_models.py
+
+# Run both dev servers
+uvicorn app.main:app --app-dir server --reload --port 8000     # in one terminal
+npm run dev                                                    # in another
 ```
 
-### Environment Variables
+Open <http://localhost:5173/market>.
 
-Copy `.env.example` to `.env` and add your Webull API credentials:
+Or use `make dev` (see the `Makefile`).
+
+### Docker
+
+```bash
+ALPHA_VANTAGE_API_KEY=your_key docker compose up --build
+```
+
+## Cross-source data consistency
+
+Training and inference must speak the same OHLCV dialect, or the model will
+silently drift:
+
+- **yfinance (training bootstrap):** downloaded with `auto_adjust=False`
+  so we get **unadjusted** OHLC and raw session volume. Dividends and splits
+  do not retroactively rewrite prior bars.
+- **Alpha Vantage `TIME_SERIES_DAILY` (runtime):** also **unadjusted** OHLC
+  and raw volume.
+- Both pass through the same normalizer (`server/app/ml/normalize.py`) so
+  column names, dtypes, trading dates (America/New_York), and duplicate
+  handling are identical.
+- The runtime feature schema is validated against the trained schema before
+  inference. Mismatched schemas surface as `ArtifactSchemaMismatch` and the
+  API returns `model_unavailable` — never a silent misprediction.
+
+## Design decisions worth calling out
+
+- **No look-ahead in features.** A dedicated test perturbs the last rows and
+  asserts that earlier feature values are unchanged.
+- **No target leakage.** The realized future return is stored as
+  `realized_future_return_{h}d`, deliberately distinct from the backward-
+  looking `return_{h}d` feature. A guard in `add_targets` prevents the old
+  bug from being reintroduced.
+- **Latest completed session.** The backend forecasts only from the most
+  recent completed daily bar in America/New_York (holidays and weekends
+  respected). No partial intraday features.
+- **Transparent failure.** When the backend is unreachable, the UI shows a
+  clear "backend unavailable" card. Demo data is opt-in only and always
+  labeled.
+
+## Tests
+
+```bash
+# Frontend
+npm run typecheck && npm run lint && npm test && npm run build
+
+# Backend
+ruff check server && pytest server
+```
+
+CI runs the same commands via `.github/workflows/`.
+
+## Repository layout
 
 ```
-VITE_WEBULL_APP_KEY=your_app_key
-VITE_WEBULL_APP_SECRET=your_app_secret
+.
+├── src/                     # Frontend (React 19, TS, Vite, Tailwind)
+│   ├── features/forecast/   # API layer, hooks, components
+│   ├── pages/daily/         # Route `/market` — SPY Forecast Lab
+│   └── test/                # Vitest setup + MSW handlers
+├── server/                  # Backend (FastAPI + scikit-learn)
+│   ├── app/                 # config, api, clients, services, ml, storage
+│   ├── scripts/             # bootstrap_history.py, train_models.py
+│   ├── artifacts/           # trained model artifacts (git-ignored)
+│   ├── data/raw/            # bootstrapped OHLCV (git-ignored)
+│   └── tests/               # pytest suite
+├── docs/                    # MODEL_CARD, DATA_CARD
+├── .github/                 # CI workflows and templates
+├── Makefile                 # convenience commands
+└── compose.yaml             # docker compose for backend + frontend
 ```
 
-The app runs without credentials using mock market data — no API key is required for development.
+## Documentation
 
-## Key Technical Decisions
+- [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md) — models, metrics, limitations,
+  deployment workflow for artifacts.
+- [`docs/DATA_CARD.md`](docs/DATA_CARD.md) — data provenance, licensing, and
+  adjustment convention.
+- [`SECURITY.md`](SECURITY.md) — reporting vulnerabilities.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to develop and test.
 
-- **React Query for server state** — Handles caching, background refetching, and stale-while-revalidate patterns without manual state management
-- **Feature-based folder structure** — Scales cleanly as features grow; each feature owns its API layer, hooks, components, and utilities
-- **WebGL via OGL** — Lightweight alternative to Three.js for animated backgrounds without the bundle size overhead
-- **Graceful degradation** — Full mock data layer enables development and demo without external API dependencies
+## License
 
-## Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start Vite dev server with HMR |
-| `npm run build` | Type-check and build for production |
-| `npm run preview` | Preview production build locally |
-| `npm run lint` | Run ESLint |
-| `npm run typecheck` | Run TypeScript compiler checks |
+MIT — see [`LICENSE`](LICENSE).

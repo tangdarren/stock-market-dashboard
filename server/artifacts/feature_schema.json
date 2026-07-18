@@ -1,0 +1,32 @@
+{
+  "adjustment": "unadjusted",
+  "features": [
+    "return_1d_lag",
+    "return_2d",
+    "return_5d",
+    "return_10d",
+    "distance_from_sma_5",
+    "distance_from_sma_10",
+    "distance_from_sma_20",
+    "distance_from_sma_50",
+    "ema_12",
+    "ema_26",
+    "macd",
+    "macd_signal",
+    "roc_10",
+    "consecutive_up_or_down",
+    "rolling_vol_5",
+    "rolling_vol_20",
+    "high_low_range",
+    "open_close_range",
+    "atr_14",
+    "opening_gap_pct",
+    "bollinger_band_position_20",
+    "volume_change",
+    "volume_to_20d_avg",
+    "volume_zscore_20",
+    "rsi_14",
+    "sma_5_over_sma_20"
+  ],
+  "generated_at": "2026-07-18T06:51:20+00:00"
+}

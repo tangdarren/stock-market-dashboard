@@ -1,43 +1,86 @@
 import { ENV } from './env'
 
 export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-  ) {
+  readonly status: number
+  readonly reason?: string
+
+  constructor(status: number, message: string, reason?: string) {
     super(message)
     this.name = 'ApiError'
+    this.status = status
+    this.reason = reason
   }
 }
 
-async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const url = `${ENV.WEBULL_BASE_URL}${endpoint}`
+export class BackendUnavailableError extends ApiError {
+  constructor(message: string) {
+    super(0, message, 'backend_unavailable')
+    this.name = 'BackendUnavailableError'
+  }
+}
 
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'App-Key': ENV.WEBULL_APP_KEY,
-      'App-Secret': ENV.WEBULL_APP_SECRET,
-      ...options?.headers,
-    },
-  })
+interface RequestOptions {
+  signal?: AbortSignal
+  query?: Record<string, string | number | boolean | undefined>
+}
 
-  if (!res.ok) {
-    throw new ApiError(res.status, `API ${res.status}: ${res.statusText}`)
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const url = new URL(`${ENV.API_PREFIX}${path}`, ENV.API_BASE_URL)
+  if (options.query) {
+    for (const [key, value] of Object.entries(options.query)) {
+      if (value === undefined) continue
+      url.searchParams.set(key, String(value))
+    }
   }
 
-  return res.json() as Promise<T>
+  let response: Response
+  try {
+    response = await fetch(url.toString(), {
+      method: 'GET',
+      signal: options.signal,
+      headers: { Accept: 'application/json' },
+      credentials: 'omit',
+    })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') throw err
+    throw new BackendUnavailableError(
+      `Cannot reach backend at ${ENV.API_BASE_URL}. Ensure the API is running.`,
+    )
+  }
+
+  // Some environments (jsdom + MSW `HttpResponse.error()`) surface a network
+  // failure as a response with `status === 0` instead of throwing.
+  if (response.status === 0 || response.type === 'error') {
+    throw new BackendUnavailableError(
+      `Cannot reach backend at ${ENV.API_BASE_URL}. Ensure the API is running.`,
+    )
+  }
+
+  const body = await response.text()
+  const parsed = body ? safeJsonParse(body) : null
+
+  if (!response.ok) {
+    const detail = parsed?.detail ?? parsed
+    const message =
+      typeof detail === 'string'
+        ? detail
+        : detail?.message ?? `Request failed with status ${response.status}`
+    const reason =
+      typeof detail === 'object' && detail !== null ? (detail.reason as string | undefined) : undefined
+    throw new ApiError(response.status, message, reason)
+  }
+
+  return (parsed as T) ?? ({} as T)
+}
+
+function safeJsonParse(text: string): any {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
 }
 
 export const apiClient = {
-  get: <T>(endpoint: string, options?: RequestInit) =>
-    request<T>(endpoint, { ...options, method: 'GET' }),
-
-  post: <T>(endpoint: string, body: unknown, options?: RequestInit) =>
-    request<T>(endpoint, {
-      ...options,
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+  get: <T>(path: string, options?: RequestOptions) => request<T>(path, options),
 }

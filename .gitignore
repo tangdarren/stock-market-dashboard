@@ -1,0 +1,54 @@
+# --- Node / frontend ---
+node_modules/
+dist/
+coverage/
+.vite/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- TypeScript / Vite build outputs ---
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+!server/.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+server/.venv/
+
+# --- Data + model artifacts (never commit generated / raw data) ---
+server/data/raw/
+server/data/cache/
+server/artifacts/*.joblib
+server/artifacts/*.pkl
+server/artifacts/*.onnx
+
+# --- SQLite runtime databases ---
+server/*.db
+server/**/*.db
+*.sqlite
+*.sqlite3
+
+# --- OS / IDE ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo

@@ -1,0 +1,443 @@
+{
+  "generated_at": "2026-07-18T06:51:20+00:00",
+  "horizons": {
+    "1d": {
+      "backtest": {
+        "available": true,
+        "cost_bps_per_side": 5.0,
+        "cumulative_return_buy_hold": 0.7888617856561555,
+        "cumulative_return_strategy": 0.0,
+        "disclaimer": "Educational historical simulation. Past performance does not guarantee future results.",
+        "hit_rate_when_in_market": 0.0,
+        "max_drawdown_strategy": 0.0,
+        "n_days": 805,
+        "test_period_end": "2026-07-16",
+        "test_period_start": "2023-05-01",
+        "threshold": 0.6,
+        "trades": 0
+      },
+      "baselines": {
+        "majority_class": {
+          "accuracy": 0.5677018633540373,
+          "balanced_accuracy": 0.5,
+          "brier": 0.24603434025710194,
+          "class_distribution": {
+            "class_0": 348,
+            "class_1": 457
+          },
+          "confusion_matrix": [
+            [
+              0,
+              348
+            ],
+            [
+              0,
+              457
+            ]
+          ],
+          "f1_up": 0.7242472266244057,
+          "n_observations": 805,
+          "precision_up": 0.5677018633540373,
+          "recall_up": 1.0,
+          "roc_auc": 0.5,
+          "test_period_end": "2026-07-16",
+          "test_period_start": "2023-05-01"
+        },
+        "persistence": {
+          "accuracy": 0.515527950310559,
+          "balanced_accuracy": 0.5064796649815136,
+          "brier": 0.2509472049689442,
+          "class_distribution": {
+            "class_0": 348,
+            "class_1": 457
+          },
+          "confusion_matrix": [
+            [
+              153,
+              195
+            ],
+            [
+              195,
+              262
+            ]
+          ],
+          "f1_up": 0.5733041575492341,
+          "n_observations": 805,
+          "precision_up": 0.5733041575492341,
+          "recall_up": 0.5733041575492341,
+          "roc_auc": 0.5064796649815136,
+          "test_period_end": "2026-07-16",
+          "test_period_start": "2023-05-01"
+        }
+      },
+      "calibration": [
+        {
+          "bin_center": 0.35000000000000003,
+          "empirical_prob": 0.4444444444444444,
+          "n": 9,
+          "predicted_prob": 0.3821229282435506
+        },
+        {
+          "bin_center": 0.45,
+          "empirical_prob": 0.5637755102040817,
+          "n": 392,
+          "predicted_prob": 0.4735927366704823
+        },
+        {
+          "bin_center": 0.55,
+          "empirical_prob": 0.5742574257425742,
+          "n": 404,
+          "predicted_prob": 0.5242678377948298
+        }
+      ],
+      "confidence_buckets": [
+        {
+          "accuracy": 0.504297994269341,
+          "bucket": "low",
+          "confidence_range": [
+            0.0,
+            0.55
+          ],
+          "n": 698
+        },
+        {
+          "accuracy": 0.5283018867924528,
+          "bucket": "moderate",
+          "confidence_range": [
+            0.55,
+            0.65
+          ],
+          "n": 106
+        },
+        {
+          "accuracy": 0.0,
+          "bucket": "high",
+          "confidence_range": [
+            0.65,
+            1.0
+          ],
+          "n": 1
+        }
+      ],
+      "holdout": {
+        "accuracy": 0.506832298136646,
+        "balanced_accuracy": 0.5067028848814106,
+        "brier": 0.2507550668481909,
+        "class_distribution": {
+          "class_0": 348,
+          "class_1": 457
+        },
+        "confusion_matrix": [
+          [
+            176,
+            172
+          ],
+          [
+            225,
+            232
+          ]
+        ],
+        "f1_up": 0.5389082462253194,
+        "n_observations": 805,
+        "precision_up": 0.5742574257425742,
+        "recall_up": 0.5076586433260394,
+        "roc_auc": 0.506904097185543,
+        "test_period_end": "2026-07-16",
+        "test_period_start": "2023-05-01"
+      },
+      "model_comparison": [
+        {
+          "fold_roc_auc": [
+            0.5284541465155832,
+            0.47921779194720027,
+            0.5197364305523698,
+            0.5181028189577718,
+            0.5218779342723004
+          ],
+          "mean_val_accuracy": 0.5034210526315789,
+          "mean_val_brier": 0.25453930838541405,
+          "mean_val_roc_auc": 0.5134778244490451,
+          "model_name": "logistic_regression",
+          "selected": true
+        },
+        {
+          "fold_roc_auc": [
+            0.5080102744280125,
+            0.4833987037775028,
+            0.5128761181892112,
+            0.4909380615453729,
+            0.5292714310554686
+          ],
+          "mean_val_accuracy": 0.49447368421052634,
+          "mean_val_brier": 0.2551887744767094,
+          "mean_val_roc_auc": 0.5048989177991137,
+          "model_name": "random_forest"
+        },
+        {
+          "fold_roc_auc": [
+            0.5125105858803604,
+            0.48290929938265126,
+            0.5271319445892502,
+            0.5067876796945193,
+            0.5258285515562511
+          ],
+          "mean_val_accuracy": 0.5107894736842105,
+          "mean_val_brier": 0.2999628691753745,
+          "mean_val_roc_auc": 0.5110336122206064,
+          "model_name": "hist_gradient_boosting"
+        }
+      ],
+      "selected_model": "logistic_regression",
+      "yearly": [
+        {
+          "accuracy": 0.5088757396449705,
+          "balanced_accuracy": 0.5049075391180654,
+          "n": 169,
+          "roc_auc": 0.4793741109530583,
+          "year": 2023
+        },
+        {
+          "accuracy": 0.49603174603174605,
+          "balanced_accuracy": 0.49805093555093555,
+          "n": 252,
+          "roc_auc": 0.4917489604989605,
+          "year": 2024
+        },
+        {
+          "accuracy": 0.524,
+          "balanced_accuracy": 0.5227436115286582,
+          "n": 250,
+          "roc_auc": 0.5614665708123653,
+          "year": 2025
+        },
+        {
+          "accuracy": 0.4925373134328358,
+          "balanced_accuracy": 0.494299128101945,
+          "n": 134,
+          "roc_auc": 0.4638944779789851,
+          "year": 2026
+        }
+      ]
+    },
+    "5d": {
+      "backtest": {
+        "available": false,
+        "reason": "not_applicable_for_horizon"
+      },
+      "baselines": {
+        "majority_class": {
+          "accuracy": 0.6260869565217392,
+          "balanced_accuracy": 0.5,
+          "brier": 0.23568406388526553,
+          "class_distribution": {
+            "class_0": 301,
+            "class_1": 504
+          },
+          "confusion_matrix": [
+            [
+              0,
+              301
+            ],
+            [
+              0,
+              504
+            ]
+          ],
+          "f1_up": 0.7700534759358288,
+          "n_observations": 805,
+          "precision_up": 0.6260869565217392,
+          "recall_up": 1.0,
+          "roc_auc": 0.5,
+          "test_period_end": "2026-07-10",
+          "test_period_start": "2023-04-25"
+        },
+        "persistence": {
+          "accuracy": 0.5043478260869565,
+          "balanced_accuracy": 0.4864110372831303,
+          "brier": 0.2520652173913044,
+          "class_distribution": {
+            "class_0": 301,
+            "class_1": 504
+          },
+          "confusion_matrix": [
+            [
+              125,
+              176
+            ],
+            [
+              223,
+              281
+            ]
+          ],
+          "f1_up": 0.5848074921956296,
+          "n_observations": 805,
+          "precision_up": 0.6148796498905909,
+          "recall_up": 0.5575396825396826,
+          "roc_auc": 0.4864110372831303,
+          "test_period_end": "2026-07-10",
+          "test_period_start": "2023-04-25"
+        }
+      },
+      "calibration": [
+        {
+          "bin_center": 0.25,
+          "empirical_prob": 0.2,
+          "n": 5,
+          "predicted_prob": 0.2693923186774122
+        },
+        {
+          "bin_center": 0.35000000000000003,
+          "empirical_prob": 0.5,
+          "n": 34,
+          "predicted_prob": 0.3598134303711269
+        },
+        {
+          "bin_center": 0.45,
+          "empirical_prob": 0.636963696369637,
+          "n": 303,
+          "predicted_prob": 0.46693328968846853
+        },
+        {
+          "bin_center": 0.55,
+          "empirical_prob": 0.631336405529954,
+          "n": 434,
+          "predicted_prob": 0.5345450585174698
+        },
+        {
+          "bin_center": 0.6500000000000001,
+          "empirical_prob": 0.6551724137931034,
+          "n": 29,
+          "predicted_prob": 0.6238471595833626
+        }
+      ],
+      "confidence_buckets": [
+        {
+          "accuracy": 0.5183150183150184,
+          "bucket": "low",
+          "confidence_range": [
+            0.0,
+            0.55
+          ],
+          "n": 546
+        },
+        {
+          "accuracy": 0.548936170212766,
+          "bucket": "moderate",
+          "confidence_range": [
+            0.55,
+            0.65
+          ],
+          "n": 235
+        },
+        {
+          "accuracy": 0.5,
+          "bucket": "high",
+          "confidence_range": [
+            0.65,
+            1.0
+          ],
+          "n": 24
+        }
+      ],
+      "holdout": {
+        "accuracy": 0.5267080745341615,
+        "balanced_accuracy": 0.5082825765965301,
+        "brier": 0.24985191099165036,
+        "class_distribution": {
+          "class_0": 301,
+          "class_1": 504
+        },
+        "confusion_matrix": [
+          [
+            131,
+            170
+          ],
+          [
+            211,
+            293
+          ]
+        ],
+        "f1_up": 0.6059979317476732,
+        "n_observations": 805,
+        "precision_up": 0.6328293736501079,
+        "recall_up": 0.5813492063492064,
+        "roc_auc": 0.5153852238569847,
+        "test_period_end": "2026-07-10",
+        "test_period_start": "2023-04-25"
+      },
+      "model_comparison": [
+        {
+          "fold_roc_auc": [
+            0.515818674647768,
+            0.5173300568620167,
+            0.4943514943514944,
+            0.5198121712997746,
+            0.5403391719290225
+          ],
+          "mean_val_accuracy": 0.5114624505928853,
+          "mean_val_brier": 0.2576369659899593,
+          "mean_val_roc_auc": 0.5175303138180152,
+          "model_name": "logistic_regression"
+        },
+        {
+          "fold_roc_auc": [
+            0.48723776717395595,
+            0.5619767408635026,
+            0.5327827827827828,
+            0.49417731029301276,
+            0.5264951281538417
+          ],
+          "mean_val_accuracy": 0.5243741765480896,
+          "mean_val_brier": 0.2544471609907337,
+          "mean_val_roc_auc": 0.5205339458534191,
+          "model_name": "random_forest",
+          "selected": true
+        },
+        {
+          "fold_roc_auc": [
+            0.46196741677725384,
+            0.5482969968854473,
+            0.5372729872729873,
+            0.48641622839969945,
+            0.5006571991885018
+          ],
+          "mean_val_accuracy": 0.5267457180500659,
+          "mean_val_brier": 0.3126197505869888,
+          "mean_val_roc_auc": 0.506922165704778,
+          "model_name": "hist_gradient_boosting"
+        }
+      ],
+      "selected_model": "random_forest",
+      "yearly": [
+        {
+          "accuracy": 0.5317919075144508,
+          "balanced_accuracy": 0.4963675213675214,
+          "n": 173,
+          "roc_auc": 0.5005698005698006,
+          "year": 2023
+        },
+        {
+          "accuracy": 0.5634920634920635,
+          "balanced_accuracy": 0.5274005652443647,
+          "n": 252,
+          "roc_auc": 0.5225753084717724,
+          "year": 2024
+        },
+        {
+          "accuracy": 0.504,
+          "balanced_accuracy": 0.4963538800220143,
+          "n": 250,
+          "roc_auc": 0.4995184369840397,
+          "year": 2025
+        },
+        {
+          "accuracy": 0.49230769230769234,
+          "balanced_accuracy": 0.49696969696969695,
+          "n": 130,
+          "roc_auc": 0.5202424242424242,
+          "year": 2026
+        }
+      ]
+    }
+  }
+}
