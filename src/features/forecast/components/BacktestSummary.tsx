@@ -1,5 +1,5 @@
 import { Badge } from '@/components/common/Badge'
-import { GlassCard } from '@/features/ui/components/GlassCard'
+import { cn } from '@/lib/utils/cn'
 import type { BacktestSummary as BacktestData } from '../api/types'
 import { formatPercent } from '../utils/format'
 
@@ -10,19 +10,19 @@ interface BacktestSummaryProps {
 export function BacktestSummary({ backtest }: BacktestSummaryProps) {
   if (!backtest || !backtest.available) {
     return (
-      <GlassCard className="p-6">
-        <div className="flex items-center gap-2">
+      <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-6">
+        <div className="flex flex-wrap items-center gap-2">
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-            Educational backtest
+            Educational simulation
           </p>
           <Badge variant="neutral">1-day model only</Badge>
         </div>
         <p className="mt-4 text-sm text-slate-400">
           {backtest?.reason === 'no_holdout_predictions'
-            ? 'No holdout predictions available to backtest.'
-            : 'Backtest not applicable for this horizon.'}
+            ? 'No holdout predictions available to backtest yet.'
+            : 'Backtest is not applicable for this horizon.'}
         </p>
-      </GlassCard>
+      </div>
     )
   }
 
@@ -36,43 +36,90 @@ export function BacktestSummary({ backtest }: BacktestSummaryProps) {
     test_period_start,
     test_period_end,
     cost_bps_per_side,
+    n_days,
   } = backtest
 
   const alpha =
     (cumulative_return_strategy ?? 0) - (cumulative_return_buy_hold ?? 0)
+  const strategyWins = alpha >= 0
 
   return (
-    <GlassCard className="p-6">
+    <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-            Educational backtest
+            Educational simulation
           </p>
-          <h2 className="mt-1 text-lg font-semibold text-white">
-            Rule: hold SPY when p<sub>up</sub> ≥ {threshold}
-          </h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Uses only walk-forward, out-of-sample 1-day predictions.
-            {test_period_start ? ` Test period ${test_period_start} → ${test_period_end}.` : null}
+          <p className="mt-2 max-w-xl text-sm text-slate-300">
+            The simulation holds SPY when the one-day up probability reaches{' '}
+            <span className="font-semibold text-white">
+              {threshold != null ? (threshold * 100).toFixed(0) : '—'}%
+            </span>{' '}
+            and otherwise remains in cash. It uses only out-of-sample,
+            walk-forward predictions.
           </p>
         </div>
         <Badge variant="warning">Educational only</Badge>
       </div>
 
       <dl className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="Strategy return" value={formatPercent((cumulative_return_strategy ?? 0) * 100, 2)} tone={cumulative_return_strategy && cumulative_return_strategy >= 0 ? 'up' : 'down'} />
-        <Stat label="Buy & hold" value={formatPercent((cumulative_return_buy_hold ?? 0) * 100, 2)} />
-        <Stat label="vs Buy & hold" value={formatPercent(alpha * 100, 2)} tone={alpha >= 0 ? 'up' : 'down'} />
-        <Stat label="Max drawdown" value={formatPercent((max_drawdown_strategy ?? 0) * 100, 2)} tone="down" />
+        <Stat
+          label="Strategy return"
+          value={formatPercent((cumulative_return_strategy ?? 0) * 100, 2)}
+          tone={
+            cumulative_return_strategy != null && cumulative_return_strategy >= 0
+              ? 'up'
+              : 'down'
+          }
+        />
+        <Stat
+          label="Buy & hold"
+          value={formatPercent((cumulative_return_buy_hold ?? 0) * 100, 2)}
+        />
+        <Stat
+          label="vs Buy & hold"
+          value={formatPercent(alpha * 100, 2)}
+          tone={strategyWins ? 'up' : 'down'}
+        />
+        <Stat
+          label="Max drawdown"
+          value={formatPercent((max_drawdown_strategy ?? 0) * 100, 2)}
+          tone="down"
+        />
         <Stat label="Trades" value={String(trades ?? 0)} />
-        <Stat label="Hit rate (in-market)" value={hit_rate_when_in_market != null ? `${(hit_rate_when_in_market * 100).toFixed(1)}%` : '—'} />
+        <Stat
+          label="Hit rate (in market)"
+          value={
+            hit_rate_when_in_market != null
+              ? `${(hit_rate_when_in_market * 100).toFixed(1)}%`
+              : '—'
+          }
+        />
       </dl>
 
-      <p className="mt-4 text-[11px] text-slate-500">
-        Transaction cost: {cost_bps_per_side} bps per side. Educational
-        historical simulation. Past performance does not guarantee future results.
+      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        {test_period_start ? (
+          <span>
+            Test period{' '}
+            <span className="text-slate-300">
+              {test_period_start} → {test_period_end}
+            </span>
+            {n_days != null ? <> · {n_days} sessions</> : null}
+          </span>
+        ) : null}
+        {cost_bps_per_side != null ? (
+          <>
+            <span aria-hidden>·</span>
+            <span>Transaction cost {cost_bps_per_side} bps / side</span>
+          </>
+        ) : null}
+      </div>
+
+      <p className="mt-3 text-[11px] text-slate-500">
+        Educational historical simulation. Past performance does not guarantee
+        future results.
       </p>
-    </GlassCard>
+    </div>
   )
 }
 
@@ -90,11 +137,11 @@ function Stat({
       ? 'text-[#00FFB2]'
       : tone === 'down'
         ? 'text-red-400'
-        : 'text-slate-200'
+        : 'text-slate-100'
   return (
-    <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+    <div className="rounded-xl border border-white/[0.04] bg-white/[0.02] p-3">
       <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-base font-semibold ${toneClass}`}>{value}</p>
+      <p className={cn('mt-1 text-base font-semibold', toneClass)}>{value}</p>
     </div>
   )
 }

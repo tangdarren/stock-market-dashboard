@@ -31,21 +31,25 @@ export function Navbar() {
         scrolled ? 'pointer-events-none -translate-y-4 opacity-0' : 'opacity-100',
       )}
     >
-      <div className="mx-auto grid h-24 max-w-7xl grid-cols-3 items-center px-6 lg:px-8">
+      <div className="mx-auto flex h-24 max-w-7xl items-center justify-between px-6 lg:px-8">
         <Link
           to={ROUTES.HOME}
-          className="justify-self-start font-['Space_Grotesk',system-ui,sans-serif] text-2xl font-bold tracking-[0.12em] text-white transition-colors hover:text-[#00FFB2] lg:-translate-x-8"
+          className="font-['Space_Grotesk',system-ui,sans-serif] text-2xl font-bold tracking-[0.12em] text-white transition-colors hover:text-[#00FFB2]"
         >
           TEMPEST
         </Link>
 
-        <nav className="hidden items-center justify-self-center gap-1 md:flex">
+        <nav
+          aria-label="Primary"
+          className="hidden items-center gap-1 md:flex"
+        >
           {navLinks.map((link) => (
             <Link
               key={link.href}
               to={link.href}
+              aria-current={isActive(link.href) ? 'page' : undefined}
               className={cn(
-                'relative px-6 py-2.5 text-base font-medium transition-colors duration-200',
+                'relative px-5 py-2.5 text-base font-medium transition-colors duration-200 lg:px-6',
                 isActive(link.href)
                   ? 'text-[#00FFB2]'
                   : 'text-white/50 hover:text-white',
@@ -63,12 +67,27 @@ export function Navbar() {
           ))}
         </nav>
 
-        <Link
-          to={ROUTES.DAILY}
-          className="hidden justify-self-end rounded-lg bg-[#00FFB2] px-6 py-3 text-base font-semibold !text-black transition-all duration-200 hover:bg-[#00e6a0] hover:shadow-[0_0_20px_rgba(0,255,178,0.25)] md:inline-flex lg:translate-x-8"
+        {/* Mobile: compact inline nav so users can still reach every route. */}
+        <nav
+          aria-label="Primary mobile"
+          className="flex items-center gap-1 md:hidden"
         >
-          Open Dashboard
-        </Link>
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              to={link.href}
+              aria-current={isActive(link.href) ? 'page' : undefined}
+              className={cn(
+                'rounded-md px-2 py-1 text-xs font-medium transition-colors',
+                isActive(link.href)
+                  ? 'text-[#00FFB2]'
+                  : 'text-white/50 hover:text-white',
+              )}
+            >
+              {link.label}
+            </Link>
+          ))}
+        </nav>
       </div>
     </header>
   )

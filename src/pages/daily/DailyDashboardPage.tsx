@@ -1,19 +1,23 @@
+import { useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+
 import { FadeContent } from '@/features/ui/components/FadeContent'
 import { usePageTitle } from '@/hooks/usePageTitle'
 
 import { BacktestSummary } from '@/features/forecast/components/BacktestSummary'
+import { ForecastDecisionHero } from '@/features/forecast/components/ForecastDecisionHero'
 import { ForecastErrorState } from '@/features/forecast/components/ForecastErrorState'
-import { ForecastHero } from '@/features/forecast/components/ForecastHero'
 import { ForecastHistoryTable } from '@/features/forecast/components/ForecastHistoryTable'
-import { ForecastProbabilityCard } from '@/features/forecast/components/ForecastProbabilityCard'
+import { ForecastSection } from '@/features/forecast/components/ForecastSection'
 import { ForecastSkeleton } from '@/features/forecast/components/ForecastSkeleton'
-import { MarketSnapshotRow } from '@/features/forecast/components/MarketSnapshotRow'
+import { MarketConditionsPanel } from '@/features/forecast/components/MarketConditionsPanel'
 import { MethodologyPanel } from '@/features/forecast/components/MethodologyPanel'
 import { ModelPerformancePanel } from '@/features/forecast/components/ModelPerformancePanel'
 import { NewsContextPanel } from '@/features/forecast/components/NewsContextPanel'
+import { PageSectionNav } from '@/features/forecast/components/PageSectionNav'
 import { PredictionExplanation } from '@/features/forecast/components/PredictionExplanation'
-import { PriceHistoryChart } from '@/features/forecast/components/PriceHistoryChart'
 
+import type { Mode } from '@/features/forecast/api/types'
 import {
   demoForecast,
   demoHistory,
@@ -29,9 +33,27 @@ import { useSpyMarketData } from '@/features/forecast/hooks/useSpyMarketData'
 import { useSpyNews } from '@/features/forecast/hooks/useSpyNews'
 import { BackendUnavailableError } from '@/lib/api/client'
 import { ENV } from '@/lib/api/env'
-import type { Mode } from '@/features/forecast/api/types'
-import { useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+
+const SECTION_IDS = {
+  outlook: 'outlook',
+  conditions: 'market-conditions',
+  explanation: 'explanation',
+  performance: 'performance',
+  history: 'forecast-history',
+  backtest: 'backtest',
+  news: 'news',
+  methodology: 'methodology',
+} as const
+
+const NAV_ITEMS = [
+  { id: SECTION_IDS.outlook, label: 'Outlook' },
+  { id: SECTION_IDS.conditions, label: 'Market conditions' },
+  { id: SECTION_IDS.explanation, label: 'Explanation' },
+  { id: SECTION_IDS.performance, label: 'Performance' },
+  { id: SECTION_IDS.history, label: 'Forecast history' },
+  { id: SECTION_IDS.backtest, label: 'Backtest' },
+  { id: SECTION_IDS.methodology, label: 'Methodology' },
+]
 
 export function DailyDashboardPage() {
   usePageTitle('SPY Forecast Lab')
@@ -48,8 +70,8 @@ export function DailyDashboardPage() {
 
   const anyLoading = market.isLoading || forecast.isLoading
   const backendUnavailable =
-    (market.error instanceof BackendUnavailableError) ||
-    (forecast.error instanceof BackendUnavailableError)
+    market.error instanceof BackendUnavailableError ||
+    forecast.error instanceof BackendUnavailableError
   const shouldUseDemoFallback = demoOverride || ENV.DEMO_MODE
   const showBackendUnavailableCard = backendUnavailable && !shouldUseDemoFallback
 
@@ -59,9 +81,10 @@ export function DailyDashboardPage() {
   const historyData = history.data ?? (shouldUseDemoFallback ? demoHistory : undefined)
   const newsData = news.data ?? (shouldUseDemoFallback ? demoNews : undefined)
 
-  const effectiveMode: Mode = shouldUseDemoFallback
-    ? 'demo'
-    : forecastData?.mode ?? marketData?.mode ?? 'unavailable'
+  const effectiveMode: Mode = useMemo(() => {
+    if (shouldUseDemoFallback) return 'demo'
+    return forecastData?.mode ?? marketData?.mode ?? 'unavailable'
+  }, [shouldUseDemoFallback, forecastData?.mode, marketData?.mode])
 
   const modelIsMissing = forecastData?.model_unavailable === true
   const oneDay = forecastData?.one_day ?? null
@@ -71,10 +94,12 @@ export function DailyDashboardPage() {
     if (shouldUseDemoFallback) return
     setIsRefreshing(true)
     try {
-      await queryClient.invalidateQueries({ queryKey: ['forecast-market'] })
-      await queryClient.invalidateQueries({ queryKey: ['forecast-spy'] })
-      await queryClient.invalidateQueries({ queryKey: ['forecast-history'] })
-      await queryClient.invalidateQueries({ queryKey: ['forecast-news'] })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['forecast-market'] }),
+        queryClient.invalidateQueries({ queryKey: ['forecast-spy'] }),
+        queryClient.invalidateQueries({ queryKey: ['forecast-history'] }),
+        queryClient.invalidateQueries({ queryKey: ['forecast-news'] }),
+      ])
     } finally {
       setIsRefreshing(false)
     }
@@ -87,20 +112,29 @@ export function DailyDashboardPage() {
         <div className="absolute bottom-0 right-0 h-72 w-72 rounded-full bg-[#00FFB2]/[0.02] blur-3xl" />
       </div>
 
-      <div className="mx-auto max-w-7xl space-y-8 px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-6 lg:px-8">
+        {/* ================= Section 1: Current Forecast ================= */}
         <FadeContent delay={0}>
-          <ForecastHero
-            forecast={forecastData}
-            market={marketData}
-            onRefresh={handleRefresh}
-            isRefreshing={isRefreshing}
-            effectiveMode={effectiveMode}
-            demoBackendUnavailable={backendUnavailable && shouldUseDemoFallback}
-          />
+          <section
+            id={SECTION_IDS.outlook}
+            aria-label="Current forecast"
+            className="scroll-mt-24"
+          >
+            <ForecastDecisionHero
+              forecast={forecastData}
+              market={marketData}
+              onRefresh={handleRefresh}
+              isRefreshing={isRefreshing}
+              effectiveMode={effectiveMode}
+              demoBackendUnavailable={backendUnavailable && shouldUseDemoFallback}
+              modelUnavailableReason={forecastData?.reason}
+              isLoading={anyLoading}
+            />
+          </section>
         </FadeContent>
 
         {showBackendUnavailableCard ? (
-          <FadeContent delay={80}>
+          <FadeContent delay={80} className="mt-6">
             <ForecastErrorState
               title="Backend unavailable"
               message={
@@ -116,7 +150,7 @@ export function DailyDashboardPage() {
         ) : null}
 
         {modelIsMissing && !shouldUseDemoFallback ? (
-          <FadeContent delay={80}>
+          <FadeContent delay={80} className="mt-6">
             <ForecastErrorState
               title="Model unavailable"
               message={
@@ -130,76 +164,124 @@ export function DailyDashboardPage() {
           </FadeContent>
         ) : null}
 
+        {/* Section navigation — appears only once real content is available. */}
+        {!showBackendUnavailableCard && !anyLoading ? (
+          <FadeContent delay={120} className="mt-6">
+            <PageSectionNav items={NAV_ITEMS} />
+          </FadeContent>
+        ) : null}
+
         {anyLoading && !forecastData && !backendUnavailable ? (
-          <ForecastSkeleton />
+          <div className="mt-8">
+            <ForecastSkeleton />
+          </div>
         ) : (
-          <>
-            <FadeContent delay={100}>
-              <MarketSnapshotRow market={marketData} />
-            </FadeContent>
-
+          <div className="mt-14 space-y-14 sm:mt-16 sm:space-y-16">
+            {/* ============ Section 2: Current Market Conditions ============ */}
             <FadeContent delay={140}>
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <ForecastProbabilityCard
-                  horizonLabel="Next trading day"
-                  horizonHint="Direction of tomorrow's close vs today's close."
-                  forecast={oneDay}
-                />
-                <ForecastProbabilityCard
-                  horizonLabel="Next five sessions"
-                  horizonHint="Direction of the close five sessions from now vs today's close."
-                  forecast={fiveDay}
-                />
-              </div>
+              <ForecastSection
+                id={SECTION_IDS.conditions}
+                eyebrow="Section 2"
+                title="Current market conditions"
+                description="The latest completed SPY session and the indicators used to build the forecast."
+              >
+                <MarketConditionsPanel market={marketData} />
+              </ForecastSection>
             </FadeContent>
 
+            {/* ============ Section 3: Why the Model Leans This Way ============ */}
             <FadeContent delay={180}>
-              <PriceHistoryChart market={marketData} />
+              <ForecastSection
+                id={SECTION_IDS.explanation}
+                eyebrow="Section 3"
+                title="Why the model leans this way"
+                description="The strongest current factors influencing the model’s probability. Explanations are correlational, not causal."
+              >
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <PredictionExplanation
+                    horizonLabel="1-day outlook"
+                    forecast={oneDay}
+                  />
+                  <PredictionExplanation
+                    horizonLabel="5-day outlook"
+                    forecast={fiveDay}
+                  />
+                </div>
+              </ForecastSection>
             </FadeContent>
 
+            {/* ============ Section 4: How Reliable Has the Model Been? ============ */}
             <FadeContent delay={220}>
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                <PredictionExplanation horizonLabel="1-day model" forecast={oneDay} />
-                <PredictionExplanation horizonLabel="5-day model" forecast={fiveDay} />
-              </div>
+              <ForecastSection
+                id={SECTION_IDS.performance}
+                eyebrow="Section 4"
+                title="How reliable has the model been?"
+                description="Out-of-sample performance compared with simple forecasting baselines."
+              >
+                <ModelPerformancePanel metrics={metricsData} />
+              </ForecastSection>
             </FadeContent>
 
+            {/* ============ Section 5: Historical Forecast Review ============ */}
             <FadeContent delay={260}>
-              <ModelPerformancePanel metrics={metricsData} />
+              <ForecastSection
+                id={SECTION_IDS.history}
+                eyebrow="Section 5"
+                title="Historical forecast review"
+                description="Recent out-of-sample forecasts, the actual outcomes, and the realized return."
+              >
+                <ForecastHistoryTable records={historyData?.records ?? []} />
+              </ForecastSection>
             </FadeContent>
 
+            {/* ============ Section 6: Educational Backtest ============ */}
             <FadeContent delay={300}>
-              <BacktestSummary
-                backtest={metricsData?.horizons?.['1d']?.backtest}
-              />
+              <ForecastSection
+                id={SECTION_IDS.backtest}
+                eyebrow="Section 6"
+                title="Educational strategy simulation"
+                description="A simple, transparent rule that goes long SPY when the model is confident enough — and holds cash otherwise."
+              >
+                <BacktestSummary backtest={metricsData?.horizons?.['1d']?.backtest} />
+              </ForecastSection>
             </FadeContent>
 
+            {/* ============ Section 7: News Context ============ */}
             <FadeContent delay={340}>
-              <ForecastHistoryTable records={historyData?.records ?? []} />
+              <ForecastSection
+                id={SECTION_IDS.news}
+                eyebrow="Section 7"
+                title="Current news context"
+                description="Current news context is displayed separately and is not used by the forecasting model."
+              >
+                <NewsContextPanel news={newsData} />
+              </ForecastSection>
             </FadeContent>
 
+            {/* ============ Section 8: Methodology & Limitations ============ */}
             <FadeContent delay={380}>
-              <NewsContextPanel news={newsData} />
-            </FadeContent>
-
-            <FadeContent delay={420}>
-              <MethodologyPanel metrics={metricsData} />
+              <ForecastSection
+                id={SECTION_IDS.methodology}
+                eyebrow="Section 8"
+                title="Methodology and limitations"
+                description="How the model is built, validated, and what it explicitly does not do."
+              >
+                <MethodologyPanel metrics={metricsData} />
+              </ForecastSection>
             </FadeContent>
 
             {shouldUseDemoFallback && backendUnavailable ? (
-              <FadeContent delay={460}>
-                <div className="flex justify-center">
-                  <button
-                    type="button"
-                    onClick={disableDemo}
-                    className="rounded-lg border border-white/[0.1] bg-white/[0.03] px-4 py-2 text-xs text-slate-300 transition-colors hover:bg-white/[0.06]"
-                  >
-                    Turn off sample data
-                  </button>
-                </div>
-              </FadeContent>
+              <div className="flex justify-center pt-4">
+                <button
+                  type="button"
+                  onClick={disableDemo}
+                  className="rounded-lg border border-white/[0.1] bg-white/[0.03] px-4 py-2 text-xs text-slate-300 transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60"
+                >
+                  Turn off sample data
+                </button>
+              </div>
             ) : null}
-          </>
+          </div>
         )}
       </div>
     </div>
