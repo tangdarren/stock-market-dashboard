@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import { ENV } from '@/lib/api/env'
 import {
+  demoAnalogues,
   demoForecast,
   demoHistory,
   demoMarket,
@@ -32,6 +33,9 @@ export const successHandlers = [
   http.get(`${base}/forecasts/history`, () => HttpResponse.json(demoHistory)),
   http.get(`${base}/model/metrics`, () => HttpResponse.json(demoMetrics)),
   http.get(`${base}/news/spy`, () => HttpResponse.json(demoNews)),
+  http.get(`${base}/market/spy/analogues`, () =>
+    HttpResponse.json({ ...demoAnalogues, mode: 'live', cache_status: 'miss' }),
+  ),
 ]
 
 export const modelUnavailableHandlers = [
@@ -75,6 +79,28 @@ export const modelUnavailableHandlers = [
   http.get(`${base}/news/spy`, () =>
     HttpResponse.json({ available: false, reason: 'no key', note: 'contextual' }),
   ),
+  http.get(`${base}/market/spy/analogues`, () =>
+    HttpResponse.json({
+      available: false,
+      symbol: 'SPY',
+      query_date: null,
+      features_as_of: null,
+      data_as_of: null,
+      limit: null,
+      methodology: {
+        method: 'standardized_euclidean_nearest_neighbors',
+        features: [],
+        minimum_separation_days: 20,
+      },
+      summary: null,
+      analogues: [],
+      disclaimer: 'Historical similarity does not imply the same future outcome.',
+      mode: 'unavailable',
+      cache_status: 'bypass',
+      reason: 'historical_dataset_missing',
+      detail: 'Historical dataset is not present.',
+    }),
+  ),
 ]
 
 export const backendDownHandlers = [
@@ -84,6 +110,7 @@ export const backendDownHandlers = [
   http.get(`${base}/forecasts/history`, () => HttpResponse.error()),
   http.get(`${base}/model/metrics`, () => HttpResponse.error()),
   http.get(`${base}/news/spy`, () => HttpResponse.error()),
+  http.get(`${base}/market/spy/analogues`, () => HttpResponse.error()),
 ]
 
 export const staleHandlers = [
@@ -113,6 +140,9 @@ export const staleHandlers = [
   http.get(`${base}/forecasts/history`, () => HttpResponse.json(demoHistory)),
   http.get(`${base}/model/metrics`, () => HttpResponse.json(demoMetrics)),
   http.get(`${base}/news/spy`, () => HttpResponse.json(demoNews)),
+  http.get(`${base}/market/spy/analogues`, () =>
+    HttpResponse.json({ ...demoAnalogues, mode: 'stale', cache_status: 'hit' }),
+  ),
 ]
 
 // Default = success.

@@ -10,6 +10,7 @@ import { ForecastErrorState } from '@/features/forecast/components/ForecastError
 import { ForecastHistoryTable } from '@/features/forecast/components/ForecastHistoryTable'
 import { ForecastSection } from '@/features/forecast/components/ForecastSection'
 import { ForecastSkeleton } from '@/features/forecast/components/ForecastSkeleton'
+import { HistoricalAnaloguesPanel } from '@/features/forecast/components/HistoricalAnaloguesPanel'
 import { MarketConditionsPanel } from '@/features/forecast/components/MarketConditionsPanel'
 import { MethodologyPanel } from '@/features/forecast/components/MethodologyPanel'
 import { ModelPerformancePanel } from '@/features/forecast/components/ModelPerformancePanel'
@@ -19,6 +20,7 @@ import { PredictionExplanation } from '@/features/forecast/components/Prediction
 
 import type { Mode } from '@/features/forecast/api/types'
 import {
+  demoAnalogues,
   demoForecast,
   demoHistory,
   demoMarket,
@@ -28,6 +30,7 @@ import {
 import { useDemoOverride } from '@/features/forecast/hooks/useDemoOverride'
 import { useForecastHistory } from '@/features/forecast/hooks/useForecastHistory'
 import { useModelMetrics } from '@/features/forecast/hooks/useModelMetrics'
+import { useSpyAnalogues } from '@/features/forecast/hooks/useSpyAnalogues'
 import { useSpyForecast } from '@/features/forecast/hooks/useSpyForecast'
 import { useSpyMarketData } from '@/features/forecast/hooks/useSpyMarketData'
 import { useSpyNews } from '@/features/forecast/hooks/useSpyNews'
@@ -38,6 +41,7 @@ const SECTION_IDS = {
   outlook: 'outlook',
   conditions: 'market-conditions',
   explanation: 'explanation',
+  analogues: 'historical-matches',
   performance: 'performance',
   history: 'forecast-history',
   backtest: 'backtest',
@@ -49,6 +53,7 @@ const NAV_ITEMS = [
   { id: SECTION_IDS.outlook, label: 'Outlook' },
   { id: SECTION_IDS.conditions, label: 'Market conditions' },
   { id: SECTION_IDS.explanation, label: 'Explanation' },
+  { id: SECTION_IDS.analogues, label: 'Historical matches' },
   { id: SECTION_IDS.performance, label: 'Performance' },
   { id: SECTION_IDS.history, label: 'Forecast history' },
   { id: SECTION_IDS.backtest, label: 'Backtest' },
@@ -67,6 +72,7 @@ export function DailyDashboardPage() {
   const metrics = useModelMetrics()
   const history = useForecastHistory(30)
   const news = useSpyNews()
+  const analogues = useSpyAnalogues(5)
 
   const anyLoading = market.isLoading || forecast.isLoading
   const backendUnavailable =
@@ -80,6 +86,8 @@ export function DailyDashboardPage() {
   const metricsData = metrics.data ?? (shouldUseDemoFallback ? demoMetrics : undefined)
   const historyData = history.data ?? (shouldUseDemoFallback ? demoHistory : undefined)
   const newsData = news.data ?? (shouldUseDemoFallback ? demoNews : undefined)
+  const analoguesData =
+    analogues.data ?? (shouldUseDemoFallback ? demoAnalogues : undefined)
 
   const effectiveMode: Mode = useMemo(() => {
     if (shouldUseDemoFallback) return 'demo'
@@ -99,6 +107,7 @@ export function DailyDashboardPage() {
         queryClient.invalidateQueries({ queryKey: ['forecast-spy'] }),
         queryClient.invalidateQueries({ queryKey: ['forecast-history'] }),
         queryClient.invalidateQueries({ queryKey: ['forecast-news'] }),
+        queryClient.invalidateQueries({ queryKey: ['forecast-analogues'] }),
       ])
     } finally {
       setIsRefreshing(false)
@@ -210,11 +219,30 @@ export function DailyDashboardPage() {
               </ForecastSection>
             </FadeContent>
 
-            {/* ============ Section 4: How Reliable Has the Model Been? ============ */}
+            {/* ============ Section 4: Similar Historical Market Setups ============ */}
             <FadeContent delay={220}>
               <ForecastSection
-                id={SECTION_IDS.performance}
+                id={SECTION_IDS.analogues}
                 eyebrow="Section 4"
+                title="Similar historical market setups"
+                description="Past SPY sessions with the most similar momentum, volatility, price, and volume conditions. Descriptive only — not a prediction."
+              >
+                <HistoricalAnaloguesPanel
+                  data={analoguesData}
+                  isLoading={analogues.isLoading}
+                  error={
+                    !shouldUseDemoFallback && !analogues.data ? analogues.error : undefined
+                  }
+                  isDemo={shouldUseDemoFallback}
+                />
+              </ForecastSection>
+            </FadeContent>
+
+            {/* ============ Section 5: How Reliable Has the Model Been? ============ */}
+            <FadeContent delay={260}>
+              <ForecastSection
+                id={SECTION_IDS.performance}
+                eyebrow="Section 5"
                 title="How reliable has the model been?"
                 description="Out-of-sample performance compared with simple forecasting baselines."
               >
@@ -222,11 +250,11 @@ export function DailyDashboardPage() {
               </ForecastSection>
             </FadeContent>
 
-            {/* ============ Section 5: Historical Forecast Review ============ */}
-            <FadeContent delay={260}>
+            {/* ============ Section 6: Historical Forecast Review ============ */}
+            <FadeContent delay={300}>
               <ForecastSection
                 id={SECTION_IDS.history}
-                eyebrow="Section 5"
+                eyebrow="Section 6"
                 title="Historical forecast review"
                 description="Recent out-of-sample forecasts, the actual outcomes, and the realized return."
               >
@@ -234,11 +262,11 @@ export function DailyDashboardPage() {
               </ForecastSection>
             </FadeContent>
 
-            {/* ============ Section 6: Educational Backtest ============ */}
-            <FadeContent delay={300}>
+            {/* ============ Section 7: Educational Backtest ============ */}
+            <FadeContent delay={340}>
               <ForecastSection
                 id={SECTION_IDS.backtest}
-                eyebrow="Section 6"
+                eyebrow="Section 7"
                 title="Educational strategy simulation"
                 description="A simple, transparent rule that goes long SPY when the model is confident enough — and holds cash otherwise."
               >
@@ -246,11 +274,11 @@ export function DailyDashboardPage() {
               </ForecastSection>
             </FadeContent>
 
-            {/* ============ Section 7: News Context ============ */}
-            <FadeContent delay={340}>
+            {/* ============ Section 8: News Context ============ */}
+            <FadeContent delay={380}>
               <ForecastSection
                 id={SECTION_IDS.news}
-                eyebrow="Section 7"
+                eyebrow="Section 8"
                 title="Current news context"
                 description="Current news context is displayed separately and is not used by the forecasting model."
               >
@@ -258,11 +286,11 @@ export function DailyDashboardPage() {
               </ForecastSection>
             </FadeContent>
 
-            {/* ============ Section 8: Methodology & Limitations ============ */}
-            <FadeContent delay={380}>
+            {/* ============ Section 9: Methodology & Limitations ============ */}
+            <FadeContent delay={420}>
               <ForecastSection
                 id={SECTION_IDS.methodology}
-                eyebrow="Section 8"
+                eyebrow="Section 9"
                 title="Methodology and limitations"
                 description="How the model is built, validated, and what it explicitly does not do."
               >

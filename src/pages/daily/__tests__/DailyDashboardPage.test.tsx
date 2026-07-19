@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { http, HttpResponse } from 'msw'
 import { DailyDashboardPage } from '../DailyDashboardPage'
 import { renderWithProviders } from '@/test/renderPage'
 import { server } from '@/test/msw/server'
@@ -9,6 +10,9 @@ import {
   staleHandlers,
   successHandlers,
 } from '@/test/msw/handlers'
+import { ENV } from '@/lib/api/env'
+
+const ANALOGUES_URL = `${ENV.API_BASE_URL}${ENV.API_PREFIX}/market/spy/analogues`
 
 async function findInterpretation() {
   return await screen.findByTestId('forecast-interpretation')
@@ -54,6 +58,7 @@ describe('DailyDashboardPage', () => {
     const expectedOrder = [
       /current market conditions/i,
       /why the model leans this way/i,
+      /similar historical market setups/i,
       /how reliable has the model been/i,
       /historical forecast review/i,
       /educational strategy simulation/i,
@@ -77,6 +82,7 @@ describe('DailyDashboardPage', () => {
     const nav = await screen.findByRole('navigation', { name: /forecast page sections/i })
     expect(within(nav).getByRole('link', { name: /outlook/i })).toBeInTheDocument()
     expect(within(nav).getByRole('link', { name: /market conditions/i })).toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: /historical matches/i })).toBeInTheDocument()
     expect(within(nav).getByRole('link', { name: /performance/i })).toBeInTheDocument()
     expect(within(nav).getByRole('link', { name: /methodology/i })).toBeInTheDocument()
   })
@@ -195,5 +201,94 @@ describe('DailyDashboardPage', () => {
 
     const staleBadges = await screen.findAllByText(/Stale cache/i)
     expect(staleBadges.length).toBeGreaterThan(0)
+  })
+
+  describe('Historical analogues section', () => {
+    it('renders the analogues section heading and disclaimer', async () => {
+      renderWithProviders(<DailyDashboardPage />)
+      expect(
+        await screen.findByRole('heading', { name: /similar historical market setups/i }),
+      ).toBeInTheDocument()
+      // Disclaimer appears somewhere on the page (the analogue panel emits it too).
+      expect(
+        (await screen.findAllByText(/Historical similarity does not imply the same future outcome/i))
+          .length,
+      ).toBeGreaterThan(0)
+    })
+
+    it('renders the deterministic aggregate sentence with words from the response', async () => {
+      renderWithProviders(<DailyDashboardPage />)
+      const summary = await screen.findByTestId('historical-analogues-summary')
+      // Demo response has 4 of 5 direction_1d === 'up' and 2 of 5 direction_5d === 'up'.
+      expect(summary).toHaveTextContent(/Among the five closest historical matches/i)
+      expect(summary).toHaveTextContent(/four finished higher and one lower the next session/i)
+      expect(summary).toHaveTextContent(/two finished higher and three lower five sessions later/i)
+    })
+
+    it('never renders BUY / SELL / HOLD trade-signal language anywhere on the page', async () => {
+      renderWithProviders(<DailyDashboardPage />)
+      await screen.findByRole('heading', { name: /similar historical market setups/i })
+      expect(document.body.textContent ?? '').not.toMatch(/\bBUY\b/)
+      expect(document.body.textContent ?? '').not.toMatch(/\bSELL\b/)
+      expect(document.body.textContent ?? '').not.toMatch(/\bHOLD\b/)
+    })
+
+    it('surfaces analogue records as a stacked list with one item per session', async () => {
+      renderWithProviders(<DailyDashboardPage />)
+      const list = await screen.findByRole('list', { name: /historical analogue sessions/i })
+      // grid-cols-1 on mobile, 2 columns md+ — mobile is the single-column
+      // stacked-records layout the design brief calls for.
+      expect(list.className).toMatch(/grid-cols-1/)
+      expect(list.className).toMatch(/md:grid-cols-2/)
+      const items = within(list).getAllByRole('listitem')
+      expect(items.length).toBe(5)
+      // Each item wraps an analogue article with a stable ID that embeds the
+      // raw ISO date (locale-independent so this test is portable across TZs).
+      expect(document.getElementById('analogue-2019-03-12-heading')).not.toBeNull()
+      expect(document.getElementById('analogue-2011-04-27-heading')).not.toBeNull()
+    })
+
+    it('degrades gracefully when the analogue endpoint fails — other sections still render', async () => {
+      // Prepend only the analogue error handler — the rest of the app keeps
+      // hitting the successHandlers registered in beforeEach. MSW gives the
+      // most-recently-prepended handler priority, so this override wins.
+      server.use(http.get(ANALOGUES_URL, () => HttpResponse.error()))
+      renderWithProviders(<DailyDashboardPage />)
+
+      // Analogue panel shows a truthful "unavailable" message. Match by
+      // substring so we don't depend on curly-vs-straight apostrophes.
+      const panelHeading = await screen.findByRole('heading', {
+        name: /similar historical market setups/i,
+      })
+      const section = panelHeading.closest('section') as HTMLElement
+      await waitFor(
+        () => {
+          const text = section.textContent ?? ''
+          expect(text).toMatch(/aren.t available/i)
+        },
+        { timeout: 3000 },
+      )
+
+      // Other sections continue to mount.
+      expect(
+        await screen.findByRole('heading', { name: /methodology and limitations/i }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('heading', { name: /how reliable has the model been/i }),
+      ).toBeInTheDocument()
+    })
+
+    it('shows the demo-labeled analogues badge after the user opts into demo mode', async () => {
+      server.use(...backendDownHandlers)
+      const user = userEvent.setup()
+      renderWithProviders(<DailyDashboardPage />)
+
+      const demoButton = await screen.findByRole('button', { name: /Show sample data/i })
+      await user.click(demoButton)
+
+      expect(
+        await screen.findByText(/Demo data — sample analogues/i),
+      ).toBeInTheDocument()
+    })
   })
 })

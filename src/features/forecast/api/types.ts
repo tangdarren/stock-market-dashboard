@@ -199,3 +199,57 @@ export interface HealthResponse {
   market_cache_available: boolean
   model_available: boolean
 }
+
+// --- Historical analogues ----------------------------------------------------
+
+export interface AnalogueRecord {
+  date: string
+  similarity: number
+  distance: number
+  close: number
+  return_1d: number
+  return_5d: number
+  direction_1d: Direction
+  direction_5d: Direction
+  rsi_14: number | null
+  rolling_vol_20: number | null
+  distance_from_sma_20: number | null
+  relative_volume: number | null
+}
+
+export interface AnalogueSummary {
+  analogue_count: number
+  positive_after_1d_pct: number | null
+  positive_after_5d_pct: number | null
+  median_return_1d: number | null
+  median_return_5d: number | null
+  avg_return_1d: number | null
+  avg_return_5d: number | null
+}
+
+export interface AnalogueMethodology {
+  method: string
+  distance?: string
+  features: string[]
+  feature_schema_version?: string
+  minimum_separation_days: number
+  candidate_pool_size?: number
+}
+
+export interface AnalogueResponse {
+  available: boolean
+  symbol: string
+  query_date: string | null
+  features_as_of: string | null
+  data_as_of: string | null
+  limit: number | null
+  methodology: AnalogueMethodology
+  summary: AnalogueSummary | null
+  analogues: AnalogueRecord[]
+  disclaimer: string
+  mode: Mode
+  cache_status?: string
+  generated_at?: string
+  reason?: string
+  detail?: string
+}
