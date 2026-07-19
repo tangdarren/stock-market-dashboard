@@ -103,8 +103,46 @@ When trusted artifacts are missing, the API returns `mode: "model_unavailable"`
 and the frontend renders a "Model unavailable" card. Never silently substitute
 a stale or unverified model.
 
+## Historical analogues (descriptive, non-model)
+
+The Market page also includes a **Similar Historical Market Setups** section
+powered by a historical analogue engine
+(`server/app/ml/analogues.py`,
+`server/app/services/analogue_service.py`).
+
+The following clarifications are important because the analogue section sits
+next to the model output on the page and could otherwise be mistaken for a
+second forecaster:
+
+- **Descriptive analysis only.** The analogue engine performs a leakage-safe
+  nearest-neighbor lookup over prior completed SPY sessions in the local
+  historical dataset. It surfaces "what environments have looked like this
+  before, and what happened afterwards."
+- **Not an additional trained classifier.** No model is fit, no coefficients
+  are learned, no `joblib` artifact is produced, and the API never loads a
+  model file when serving analogues.
+- **Does not alter forecast probabilities.** The one-day and five-day
+  probabilities returned by `/api/v1/forecasts/spy` are unchanged whether
+  or not the analogue endpoint is available. The two features are wired
+  independently.
+- **Contextual examples only.** Realized one-day and five-day returns
+  reported per analogue are the actual historical outcomes for those prior
+  sessions, not projections onto the current session.
+- **Not causal evidence.** A small distance in standardized feature space
+  is a correlational similarity — it is not proof that the market will
+  behave the same way, and analogues carry the same disclaimer as the
+  rest of the page: *"Historical similarity does not imply the same future
+  outcome."*
+
+See [`docs/DATA_CARD.md`](DATA_CARD.md#historical-analogue-engine--data-usage)
+for the exact features, eligibility rules, standardization methodology, and
+output schema.
+
 ## Change log
 
 - `v1-...` — initial release. Model selection: highest CV ROC-AUC (tie-break
   by Brier). Bug fix: prevented target column overwrite of the identically
   named backward-looking `return_{h}d` feature.
+- Historical analogue engine added as a descriptive companion to the
+  Market page. No change to model targets, model selection, generated
+  model metrics, or forecast probabilities.
