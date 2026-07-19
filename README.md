@@ -151,7 +151,7 @@ forecast probability.
 2. **Candidate pool.** All prior completed sessions in the local historical
    dataset that:
    - occurred **strictly before** the query session's date;
-   - lie **outside a 20-trading-day temporal separation window** around the
+   - lie **outside a 20-calendar-day temporal separation window** around the
      query date, so the query cannot approximately match itself and so
      five-day realized outcomes cannot leak into the query's own horizon;
    - have **both** one-day and five-day realized future returns known.

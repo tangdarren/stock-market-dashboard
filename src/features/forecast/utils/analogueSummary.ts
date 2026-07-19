@@ -24,6 +24,14 @@ export function buildAnalogueSummarySentence(response: AnalogueResponse | null |
   const downNext = n - upNext
   const downFive = n - upFive
 
+  if (n === 1) {
+    return (
+      `The single closest historical match finished ` +
+      `${upNext === 1 ? 'higher' : 'lower'} the next session and ` +
+      `${upFive === 1 ? 'higher' : 'lower'} five sessions later.`
+    )
+  }
+
   return (
     `Among the ${numberWord(n)} closest historical matches, ` +
     `${countPhrase(upNext, downNext, 'higher', 'lower')} the next session ` +

@@ -233,7 +233,10 @@ export function DailyDashboardPage() {
                   error={
                     !shouldUseDemoFallback && !analogues.data ? analogues.error : undefined
                   }
-                  isDemo={shouldUseDemoFallback}
+                  // Derive from the payload's own mode so a stale
+                  // demo-override localStorage flag can't mislabel a real live
+                  // response as demo data if the backend has come back up.
+                  isDemo={analoguesData?.mode === 'demo'}
                 />
               </ForecastSection>
             </FadeContent>

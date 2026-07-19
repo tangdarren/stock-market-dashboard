@@ -110,7 +110,11 @@ export function HistoricalAnaloguesPanel({
       >
         {analogues.map((a) => (
           <li key={a.date}>
-            <AnalogueCard record={a} />
+            <AnalogueCard
+              record={a}
+              featureCount={data.methodology?.features?.length ?? 0}
+              separationDays={data.methodology?.minimum_separation_days ?? 0}
+            />
           </li>
         ))}
       </ul>
@@ -134,7 +138,15 @@ export function HistoricalAnaloguesPanel({
 // Individual analogue card
 // ---------------------------------------------------------------------------
 
-function AnalogueCard({ record }: { record: AnalogueRecord }) {
+function AnalogueCard({
+  record,
+  featureCount,
+  separationDays,
+}: {
+  record: AnalogueRecord
+  featureCount: number
+  separationDays: number
+}) {
   const detailsId = `analogue-${record.date}-details`
   return (
     <article
@@ -198,10 +210,12 @@ function AnalogueCard({ record }: { record: AnalogueRecord }) {
         </summary>
         <div id={detailsId} className="border-t border-white/[0.04] px-3 py-3 text-xs text-slate-400">
           <p>
-            This session was closest in a standardized 11-feature space — the
+            This session was closest in a standardized{' '}
+            {featureCount > 0 ? `${featureCount}-feature` : 'multi-feature'} space — the
             same features used by the forecasting models — after excluding
-            sessions within 20 trading days of the query date and any session
-            whose 5-day realized outcome was not yet observable.
+            sessions within {separationDays > 0 ? separationDays : 20} days of
+            the query date and any session whose 5-day realized outcome was
+            not yet observable.
           </p>
           <dl className="mt-3 grid grid-cols-2 gap-2">
             <MetaCell label="Close price" value={`$${formatNumber(record.close, 2)}`} />

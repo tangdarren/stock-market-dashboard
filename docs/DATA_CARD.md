@@ -128,10 +128,11 @@ For a query session with date `q`, a historical row `t` is eligible only if
 
 1. **Temporal ordering.** `t < q`. The engine strictly refuses to look
    forward.
-2. **Temporal separation.** `abs(q − t)` in trading days is at least
-   **`MINIMUM_SEPARATION_DAYS = 20`**. This prevents the query from
-   approximately matching itself and prevents a candidate's five-day realized
-   return from overlapping the query horizon.
+2. **Temporal separation.** `abs(q − t)` in calendar days is at least
+   **`MINIMUM_SEPARATION_DAYS = 20`** (implemented as `pd.Timedelta(days=20)`).
+   This is deliberately wider than a five-session horizon so the query cannot
+   approximately match itself and a candidate's five-day realized return
+   cannot overlap the query horizon.
 3. **Realized outcomes known.** Both `realized_future_return_1d` and
    `realized_future_return_5d` must be non-`NaN`. Rows without observed
    future outcomes are dropped — the engine never reports an analogue whose

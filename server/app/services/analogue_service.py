@@ -367,6 +367,7 @@ def _unavailable(
         "disclaimer": ANALOGUE_DISCLAIMER,
         "mode": mode,
         "cache_status": "bypass",
+        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         "reason": reason,
         "detail": detail,
     }
