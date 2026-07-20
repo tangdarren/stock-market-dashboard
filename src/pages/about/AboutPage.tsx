@@ -1,6 +1,5 @@
 import { usePageTitle } from '@/hooks/usePageTitle'
 import { FadeContent } from '@/features/ui/components/FadeContent'
-import Folder from '@/features/ui/components/Folder'
 
 const stats = [
   { label: 'Focus', value: 'Market Intelligence' },
@@ -20,35 +19,56 @@ const capabilities = [
 const timeline = [
   {
     index: '01',
-    period: '2019 — Present',
-    title: 'Discovering the Market',
-    subtitle: 'The Beginning',
+    period: 'Computer Science',
+    title: 'Building the Foundation',
+    subtitle: 'Engineering Fundamentals',
     description:
-      'Started studying equities, price action, and market structure. What began as curiosity turned into a deep, lasting obsession with understanding how markets move and why most traders lose.',
+      'Developed a strong foundation in software engineering through computer science studies, hands-on projects, and continuous experimentation across frontend, backend, algorithms, and data-driven systems.',
   },
   {
     index: '02',
-    period: '2021 — 2022',
-    title: 'Teaching & Leading',
-    subtitle: 'Community',
+    period: '2024 — 2025',
+    title: 'Building Real-World Tools',
+    subtitle: 'Software Engineering',
     description:
-      'Built and ran a trading group focused on education and live analysis. Helped others develop real frameworks for reading the market — then stepped away to sharpen skills and pursue new projects.',
+      'Built internal applications for inventory, production scheduling, and operational workflows. Focused on turning manual processes into reliable, approachable software that people could use every day.',
   },
   {
     index: '03',
-    period: '2022 — 2025',
-    title: 'Going Deeper',
-    subtitle: 'Mastery',
+    period: '2026 — Present',
+    title: 'Exploring AI-Powered Workflows',
+    subtitle: 'AI Agents & Automation',
     description:
-      'Years of screen time, refining strategy, and learning to trade with discipline over impulse. Focused on consistency, risk management, and building the kind of edge that compounds quietly over time.',
+      'Expanded into AI agent development, workflow automation, API integrations, and evaluation systems — combining traditional software engineering with practical applications of modern AI.',
   },
   {
     index: '04',
     period: '2026 — Ongoing',
-    title: 'Building Tempest',
-    subtitle: 'Product & Purpose',
+    title: 'Building Market Intelligence',
+    subtitle: 'SPY Forecast Lab',
     description:
-      'Channeling years of market experience into a platform that gives traders what they actually need — clarity before the open, structured context, and tools built by someone who trades. Tempest is the tool I wish I had from day one.',
+      'Created a full-stack market intelligence platform that transforms live and historical SPY data into structured analysis, overnight context, historical analogues, and decision-support tools.',
+  },
+]
+
+const principles = [
+  {
+    index: '01',
+    title: 'Clarity Over Complexity',
+    description:
+      'Software should make difficult information easier to understand. I prioritize clear interfaces, focused workflows, and architecture that can be explained and maintained.',
+  },
+  {
+    index: '02',
+    title: 'Build for Real Use',
+    description:
+      'A project is more meaningful when it solves an actual problem. I begin with the user’s workflow, identify the friction, and build around the outcome rather than the technology alone.',
+  },
+  {
+    index: '03',
+    title: 'Iterate With Evidence',
+    description:
+      'The first implementation is rarely the final one. I use testing, feedback, data, and careful evaluation to improve both the product experience and the underlying system.',
   },
 ]
 
@@ -292,28 +312,46 @@ export function AboutPage() {
       <section className="border-t border-white/[0.04] py-24">
         <div className="mx-auto max-w-5xl px-6 lg:px-8">
           <FadeContent>
-            <div className="mx-auto flex max-w-3xl flex-col items-center gap-16 lg:flex-row lg:items-center lg:justify-between">
-              <div className="shrink-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-green-400/80">
-                  Philosophy
-                </p>
-                <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-                  What Drives Us
-                </h2>
-              </div>
-              <div className="flex shrink-0 items-center justify-center" style={{ width: '300px', height: '250px' }}>
-                <Folder
-                  color="#00FFB2"
-                  size={2}
-                  items={[
-                    <span key="1"></span>,
-                    <span key="2"></span>,
-                    <span key="3">Conviction</span>,
-                  ]}
-                />
-              </div>
-            </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-green-400/80">
+              Engineering Philosophy
+            </p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              How I Build
+            </h2>
           </FadeContent>
+
+          <div className="mt-14 grid grid-cols-1 gap-6 md:grid-cols-3">
+            {principles.map((principle, i) => (
+              <FadeContent key={principle.index} delay={i * 100}>
+                <article className="group relative flex h-full flex-col rounded-2xl border border-white/[0.06] bg-white/[0.02] p-6 transition-all duration-300 hover:border-green-500/15 hover:bg-white/[0.03] sm:p-7">
+                  <span
+                    aria-hidden
+                    className="absolute -left-px top-6 h-10 w-px bg-gradient-to-b from-green-500/60 to-green-500/0"
+                  />
+
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-green-400/60">
+                      N°{principle.index} — Principle
+                    </span>
+                    <span
+                      aria-hidden
+                      className="font-mono text-xs text-slate-600"
+                    >
+                      {principle.index}
+                    </span>
+                  </div>
+
+                  <h3 className="mt-5 text-lg font-semibold tracking-tight text-white">
+                    {principle.title}
+                  </h3>
+
+                  <p className="mt-3 text-sm leading-relaxed text-slate-400">
+                    {principle.description}
+                  </p>
+                </article>
+              </FadeContent>
+            ))}
+          </div>
         </div>
       </section>
 
