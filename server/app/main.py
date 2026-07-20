@@ -13,6 +13,7 @@ from app.api import health as health_router
 from app.api import market as market_router
 from app.api import model as model_router
 from app.api import news as news_router
+from app.api import replay as replay_router
 from app.config import announce_startup_configuration, get_settings
 
 
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(forecasts_router.router, prefix=v1_prefix)
     app.include_router(model_router.router, prefix=v1_prefix)
     app.include_router(news_router.router, prefix=v1_prefix)
+    app.include_router(replay_router.router, prefix=v1_prefix)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):  # noqa: ARG001

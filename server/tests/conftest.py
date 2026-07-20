@@ -44,12 +44,17 @@ def _isolate_settings(tmp_path, monkeypatch):
     market_service._default_cache.cache_clear()
     market_service._default_rate_limiter.cache_clear()
 
+    from app.services import replay_service
+
+    replay_service.clear_replay_file_caches()
+
     yield
 
     market_service._default_database.cache_clear()
     market_service._default_cache.cache_clear()
     market_service._default_rate_limiter.cache_clear()
     config_module.get_settings.cache_clear()
+    replay_service.clear_replay_file_caches()
 
 
 @pytest.fixture
