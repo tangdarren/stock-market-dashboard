@@ -1,11 +1,14 @@
 """Tests for Market Replay Lab domain helpers and service.
 
 Uses controlled synthetic OHLCV + walk-forward frames only — no network.
+Organized around user-visible replay behavior: eligibility, pre-reveal
+integrity, walk-forward outcomes, truthful unavailable states, and caching.
 """
 
 from __future__ import annotations
 
 import random
+import time
 
 import numpy as np
 import pandas as pd
@@ -29,112 +32,25 @@ from app.services.replay_service import (
     ReplayService,
     clear_replay_file_caches,
 )
+from tests.replay_fixtures import (
+    assert_session_has_no_leakage,
+    seed_replay_artifacts,
+    synthetic_ohlcv,
+    synthetic_walk_forward,
+    walk_forward_matching_ohlcv,
+    write_history,
+    write_walk_forward,
+)
 
 # ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-def _ohlcv(n: int = 200, start: str = "2020-01-02", seed: int = 7) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
-    close = 300 + np.cumsum(rng.normal(0, 1.2, size=n))
-    dates = pd.bdate_range(start=start, periods=n)
-    return pd.DataFrame(
-        {
-            "date": dates,
-            "open": close + rng.normal(0, 0.4, size=n),
-            "high": close + rng.uniform(0.3, 1.8, size=n),
-            "low": close - rng.uniform(0.3, 1.8, size=n),
-            "close": close,
-            "volume": rng.integers(1_000_000, 8_000_000, size=n),
-        }
-    )
-
-
-def _walk_forward_for(
-    dates: list[pd.Timestamp] | pd.DatetimeIndex,
-    *,
-    horizons: tuple[int, ...] = (1, 5),
-    drop_horizon_on: dict[str, int] | None = None,
-    realized_by_date: dict[str, dict[int, float]] | None = None,
-) -> pd.DataFrame:
-    rows: list[dict[str, object]] = []
-    drop_horizon_on = drop_horizon_on or {}
-    realized_by_date = realized_by_date or {}
-    for i, ts in enumerate(dates):
-        iso = pd.Timestamp(ts).date().isoformat()
-        for h in horizons:
-            if drop_horizon_on.get(iso) == h:
-                continue
-            realized = realized_by_date.get(iso, {}).get(h)
-            if realized is None:
-                realized = 0.01 if i % 2 == 0 else -0.01
-            rows.append(
-                {
-                    "date": iso,
-                    "horizon_days": h,
-                    "prob_up": 0.4 + (i % 10) * 0.02,
-                    "predicted": int((0.4 + (i % 10) * 0.02) >= 0.5),
-                    "actual": int(realized > 0),
-                    "correct": int(((0.4 + (i % 10) * 0.02) >= 0.5) == (realized > 0)),
-                    "realized_return": float(realized),
-                }
-            )
-    return pd.DataFrame(rows)
-
-
-def _walk_forward_from_ohlcv(
-    ohlcv: pd.DataFrame,
-    dates: list[pd.Timestamp] | pd.DatetimeIndex,
-) -> pd.DataFrame:
-    """Build walk-forward rows whose realized returns match true forward closes."""
-    with_targets = add_targets(ohlcv.copy())
-    by_date = {
-        pd.Timestamp(row["date"]).normalize(): row for _, row in with_targets.iterrows()
-    }
-    realized: dict[str, dict[int, float]] = {}
-    for ts in dates:
-        row = by_date[pd.Timestamp(ts).normalize()]
-        iso = pd.Timestamp(ts).date().isoformat()
-        realized[iso] = {
-            1: float(row["realized_future_return_1d"]),
-            5: float(row["realized_future_return_5d"]),
-        }
-    return _walk_forward_for(dates, realized_by_date=realized)
-
-
-def _write_history(tmp_path, ohlcv: pd.DataFrame, monkeypatch) -> None:
-    from app import config as config_module
-
-    data_raw = tmp_path / "data"
-    data_raw.mkdir(exist_ok=True)
-    path = data_raw / "spy_daily.csv"
-    ohlcv.to_csv(path, index=False)
-    monkeypatch.setattr(config_module, "DATA_RAW_DIR", data_raw)
-    clear_replay_file_caches()
-
-
-def _write_walk_forward(tmp_path, walk_forward: pd.DataFrame, monkeypatch) -> None:
-    from app import config as config_module
-
-    artifacts = tmp_path / "artifacts"
-    artifacts.mkdir(exist_ok=True)
-    path = artifacts / "walk_forward_predictions.csv"
-    walk_forward.to_csv(path, index=False)
-    monkeypatch.setattr(config_module, "ARTIFACTS_DIR", artifacts)
-    clear_replay_file_caches()
-
-
-# ---------------------------------------------------------------------------
-# Domain: eligibility
+# Eligibility
 # ---------------------------------------------------------------------------
 
 
 def test_eligible_dates_are_intersection_of_history_and_walk_forward():
-    ohlcv = _ohlcv(n=120)
-    # Walk-forward covers only a middle band that is fully inside history.
+    ohlcv = synthetic_ohlcv(n=120)
     walk_dates = ohlcv["date"].iloc[70:100]
-    walk = _walk_forward_for(walk_dates)
+    walk = synthetic_walk_forward(walk_dates)
 
     eligible = eligible_replay_dates(ohlcv, walk)
     eligible_set = set(eligible)
@@ -144,28 +60,29 @@ def test_eligible_dates_are_intersection_of_history_and_walk_forward():
     assert eligible
     assert eligible_set <= history_isos
     assert eligible_set <= walk_isos
-    # Walk-forward starts at index 70 (>= lookback depth), so the first walk date is eligible.
     assert eligible[0] == ohlcv["date"].iloc[70].date().isoformat()
     assert eligible[-1] == ohlcv["date"].iloc[99].date().isoformat()
-    # A later history date with no walk-forward row is excluded.
+    # History-only date with no walk-forward row is excluded.
     assert ohlcv["date"].iloc[110].date().isoformat() not in eligible_set
 
 
-def test_eligible_dates_require_both_horizons_and_lookback():
-    ohlcv = _ohlcv(n=120)
+def test_dates_without_sufficient_lookback_are_excluded():
+    ohlcv = synthetic_ohlcv(n=120)
     outcome_dates = ohlcv["date"].iloc[50:]
-    walk = _walk_forward_for(outcome_dates)
+    walk = synthetic_walk_forward(outcome_dates)
 
     eligible = eligible_replay_dates(ohlcv, walk)
     assert eligible
-    # First outcome date is at index 50 — lookback of 60 requires index >= 59.
+    # Index 50 has outcomes but fewer than LOOKBACK_SESSIONS prior bars.
+    assert ohlcv["date"].iloc[50].date().isoformat() not in set(eligible)
+    # First eligible session is the first with sessions_through >= 60.
     assert eligible[0] == ohlcv["date"].iloc[59].date().isoformat()
     assert eligible[-1] == ohlcv["date"].iloc[-1].date().isoformat()
 
 
 def test_dates_missing_one_horizon_are_not_eligible():
-    ohlcv = _ohlcv(n=100)
-    walk = _walk_forward_for(
+    ohlcv = synthetic_ohlcv(n=100)
+    walk = synthetic_walk_forward(
         ohlcv["date"].iloc[60:],
         drop_horizon_on={ohlcv["date"].iloc[80].date().isoformat(): 5},
     )
@@ -175,9 +92,8 @@ def test_dates_missing_one_horizon_are_not_eligible():
 
 
 def test_dates_without_known_outcomes_are_excluded():
-    ohlcv = _ohlcv(n=100)
-    walk = _walk_forward_for(ohlcv["date"].iloc[60:])
-    # Null out both horizons' realized returns for one date.
+    ohlcv = synthetic_ohlcv(n=100)
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[60:])
     target = ohlcv["date"].iloc[85].date().isoformat()
     walk.loc[walk["date"] == target, "realized_return"] = np.nan
     walk.loc[walk["date"] == target, "actual"] = np.nan
@@ -188,7 +104,7 @@ def test_dates_without_known_outcomes_are_excluded():
 
 
 def test_walk_forward_outcome_dates_require_finite_realized_return():
-    walk = _walk_forward_for(pd.bdate_range("2023-01-03", periods=3))
+    walk = synthetic_walk_forward(pd.bdate_range("2023-01-03", periods=3))
     walk.loc[walk["date"] == "2023-01-03", "realized_return"] = np.nan
     dates = {ts.date().isoformat() for ts in walk_forward_outcome_dates(walk)}
     assert "2023-01-03" not in dates
@@ -206,15 +122,18 @@ def test_nearest_eligible_dates_before_and_after():
     before, after = nearest_eligible_dates(eligible, "2024-01-10")
     assert before == "2024-01-08"
     assert after is None
+    before, after = nearest_eligible_dates(eligible, "2024-01-05")
+    assert before == "2024-01-03"
+    assert after == "2024-01-08"
 
 
 # ---------------------------------------------------------------------------
-# Domain: snapshot leakage + indicators
+# Pre-reveal snapshot integrity (no look-ahead)
 # ---------------------------------------------------------------------------
 
 
 def test_snapshot_chart_ends_exactly_on_selected_date():
-    ohlcv = _ohlcv(n=120)
+    ohlcv = synthetic_ohlcv(n=120)
     selected = ohlcv["date"].iloc[90]
     snapshot = build_replay_snapshot(ohlcv, selected, lookback_sessions=LOOKBACK_SESSIONS)
 
@@ -225,9 +144,9 @@ def test_snapshot_chart_ends_exactly_on_selected_date():
 
 
 def test_snapshot_never_includes_future_or_model_fields():
-    ohlcv = _ohlcv(n=120)
+    ohlcv = synthetic_ohlcv(n=120)
     selected = ohlcv["date"].iloc[90]
-    future = _ohlcv(n=10, start="2025-01-01", seed=99)
+    future = synthetic_ohlcv(n=10, start="2025-01-01", seed=99)
     future["close"] = future["close"] + 500
     combined = pd.concat([ohlcv, future], ignore_index=True)
 
@@ -235,7 +154,6 @@ def test_snapshot_never_includes_future_or_model_fields():
     assert_snapshot_has_no_leakage_fields(snapshot)
     assert snapshot.selected_date == selected.date().isoformat()
     assert len(snapshot.sessions) == LOOKBACK_SESSIONS
-    assert snapshot.sessions[-1].date == snapshot.selected_date
     assert all(bar.date <= snapshot.selected_date for bar in snapshot.sessions)
 
     snapshot_as_of = build_replay_snapshot(ohlcv, selected, lookback_sessions=LOOKBACK_SESSIONS)
@@ -244,8 +162,8 @@ def test_snapshot_never_includes_future_or_model_fields():
 
 
 def test_modifying_rows_after_selected_date_does_not_change_snapshot():
-    """Regression: post-selected mutations must not alter the pre-reveal snapshot."""
-    ohlcv = _ohlcv(n=130, seed=21)
+    """Leakage regression: post-selected mutations must not alter the pre-reveal snapshot."""
+    ohlcv = synthetic_ohlcv(n=130, seed=21)
     selected = ohlcv["date"].iloc[95]
     baseline = build_replay_snapshot(ohlcv, selected, lookback_sessions=LOOKBACK_SESSIONS)
 
@@ -260,7 +178,7 @@ def test_modifying_rows_after_selected_date_does_not_change_snapshot():
 
 
 def test_indicators_use_only_information_through_selected_date():
-    ohlcv = _ohlcv(n=100)
+    ohlcv = synthetic_ohlcv(n=100)
     selected = ohlcv["date"].iloc[-1]
     snapshot = build_replay_snapshot(ohlcv, selected, lookback_sessions=LOOKBACK_SESSIONS)
 
@@ -280,32 +198,24 @@ def test_indicators_use_only_information_through_selected_date():
     )
     assert features[list(FEATURE_NAMES)].notna().all()
 
-    # Truncating history before feature engineering must match building on full-as-of.
-    truncated_features = build_features(as_of.copy())
-    full_then_slice = build_features(ohlcv)
-    as_of_from_full = full_then_slice[full_then_slice["date"] <= selected]
-    # RSI/SMA on truncated frame equals engineering only on as-of data (no peek).
-    assert float(truncated_features.iloc[-1]["rsi_14"]) == pytest.approx(
-        float(as_of_from_full.iloc[-1]["rsi_14"])
-    )
-
 
 def test_snapshot_rejects_insufficient_lookback():
-    ohlcv = _ohlcv(n=40)
+    ohlcv = synthetic_ohlcv(n=40)
     with pytest.raises(ValueError, match="Need at least"):
         build_replay_snapshot(ohlcv, ohlcv["date"].iloc[-1], lookback_sessions=60)
 
 
 # ---------------------------------------------------------------------------
-# Domain: result from walk-forward only + horizon semantics
+# Walk-forward outcomes (no retrospective model inference)
 # ---------------------------------------------------------------------------
 
 
 def test_result_reads_walk_forward_not_model_inference():
-    ohlcv = _ohlcv(n=100)
+    ohlcv = synthetic_ohlcv(n=100)
     selected = ohlcv["date"].iloc[80]
-    walk = _walk_forward_for([selected])
+    walk = synthetic_walk_forward([selected])
     ohlcv = ohlcv.copy()
+    # Poison future prices — result must still come from the walk-forward artifact.
     ohlcv.loc[ohlcv["date"] > selected, "close"] = 1e9
 
     result = build_replay_result(walk, selected)
@@ -319,11 +229,10 @@ def test_result_reads_walk_forward_not_model_inference():
 
 
 def test_one_and_five_session_returns_match_future_trading_sessions():
-    """Walk-forward realized returns must equal next / fifth future session returns."""
-    ohlcv = _ohlcv(n=120, seed=3)
+    """Realized returns must equal next / fifth future trading-session closes."""
+    ohlcv = synthetic_ohlcv(n=120, seed=3)
     selected_idx = 90
     selected = ohlcv["date"].iloc[selected_idx]
-    # Need at least 5 future sessions after selected.
     assert selected_idx + 5 < len(ohlcv)
 
     close_t = float(ohlcv["close"].iloc[selected_idx])
@@ -332,7 +241,6 @@ def test_one_and_five_session_returns_match_future_trading_sessions():
     expected_1d = (close_next / close_t) - 1.0
     expected_5d = (close_fifth / close_t) - 1.0
 
-    # Confirm helper targets agree with explicit next / fifth trading-session offsets.
     targets = add_targets(ohlcv)
     row = targets.iloc[selected_idx]
     assert float(row["realized_future_return_1d"]) == pytest.approx(expected_1d)
@@ -342,7 +250,7 @@ def test_one_and_five_session_returns_match_future_trading_sessions():
     assert next_session > pd.Timestamp(selected).normalize()
     assert fifth_session > next_session
 
-    walk = _walk_forward_from_ohlcv(ohlcv, [selected])
+    walk = walk_forward_matching_ohlcv(ohlcv, [selected])
     result = build_replay_result(walk, selected)
     assert result.one_day.realized_return == pytest.approx(expected_1d)
     assert result.five_day.realized_return == pytest.approx(expected_5d)
@@ -351,9 +259,9 @@ def test_one_and_five_session_returns_match_future_trading_sessions():
 
 
 def test_bundle_keeps_snapshot_and_result_separate():
-    ohlcv = _ohlcv(n=120)
+    ohlcv = synthetic_ohlcv(n=120)
     selected = ohlcv["date"].iloc[90]
-    walk = _walk_forward_for(ohlcv["date"].iloc[60:])
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[60:])
     bundle = build_replay_bundle(ohlcv, walk, selected)
 
     snap_keys = set(bundle.snapshot.to_dict().keys())
@@ -365,7 +273,7 @@ def test_bundle_keeps_snapshot_and_result_separate():
 
 
 # ---------------------------------------------------------------------------
-# Service layer
+# Service: truthful unavailable states
 # ---------------------------------------------------------------------------
 
 
@@ -380,11 +288,12 @@ def test_service_unavailable_when_history_missing(tmp_path, monkeypatch):
     payload = ReplayService().list_eligible_sessions()
     assert payload["available"] is False
     assert payload["reason"] == "historical_dataset_missing"
+    assert payload["eligible_dates"] == []
 
 
 def test_service_unavailable_when_walk_forward_missing(tmp_path, monkeypatch):
-    ohlcv = _ohlcv(n=80)
-    _write_history(tmp_path, ohlcv, monkeypatch)
+    ohlcv = synthetic_ohlcv(n=80)
+    write_history(tmp_path, ohlcv, monkeypatch)
     from app import config as config_module
 
     monkeypatch.setattr(config_module, "ARTIFACTS_DIR", tmp_path / "empty_artifacts")
@@ -399,8 +308,8 @@ def test_service_unavailable_when_walk_forward_missing(tmp_path, monkeypatch):
 
 
 def test_service_malformed_walk_forward_does_not_fabricate(tmp_path, monkeypatch):
-    ohlcv = _ohlcv(n=100)
-    _write_history(tmp_path, ohlcv, monkeypatch)
+    ohlcv = synthetic_ohlcv(n=100)
+    write_history(tmp_path, ohlcv, monkeypatch)
     from app import config as config_module
 
     artifacts = tmp_path / "artifacts"
@@ -414,20 +323,64 @@ def test_service_malformed_walk_forward_does_not_fabricate(tmp_path, monkeypatch
     result = service.get_result(ohlcv["date"].iloc[80].date().isoformat())
 
     assert listing["available"] is False
-    assert listing["reason"] in {
-        "walk_forward_artifact_malformed",
-        "historical_dataset_malformed",
-    }
+    assert listing["reason"] == "walk_forward_artifact_malformed"
     assert result["available"] is False
+    assert result["reason"] == "walk_forward_artifact_malformed"
     assert result["one_day"] is None
     assert result["five_day"] is None
 
 
+def test_service_malformed_history_is_truthful(tmp_path, monkeypatch):
+    from app import config as config_module
+
+    data_raw = tmp_path / "data"
+    data_raw.mkdir(exist_ok=True)
+    (data_raw / "spy_daily.csv").write_text("not,valid,ohlcv\n1,2,3\n")
+    monkeypatch.setattr(config_module, "DATA_RAW_DIR", data_raw)
+
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir(exist_ok=True)
+    synthetic_walk_forward(pd.bdate_range("2023-01-03", periods=5)).to_csv(
+        artifacts / "walk_forward_predictions.csv", index=False
+    )
+    monkeypatch.setattr(config_module, "ARTIFACTS_DIR", artifacts)
+    clear_replay_file_caches()
+
+    payload = ReplayService().list_eligible_sessions()
+    assert payload["available"] is False
+    assert payload["reason"] == "historical_dataset_malformed"
+
+
+def test_service_ineligible_date_is_truthful(tmp_path, monkeypatch):
+    ohlcv = synthetic_ohlcv(n=100)
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[60:])
+    write_history(tmp_path, ohlcv, monkeypatch)
+    write_walk_forward(tmp_path, walk, monkeypatch)
+
+    early = ohlcv["date"].iloc[10].date().isoformat()
+    payload = ReplayService().get_replay(early)
+    assert payload["available"] is False
+    assert payload["reason"] in {
+        "date_not_eligible",
+        "insufficient_history",
+        "walk_forward_prediction_unavailable",
+        "date_out_of_range",
+    }
+    assert payload["snapshot"] is None
+    assert payload["result"] is None
+    assert payload["nearest_eligible_after"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Service: happy paths + model isolation
+# ---------------------------------------------------------------------------
+
+
 def test_service_returns_replay_bundle(tmp_path, monkeypatch):
-    ohlcv = _ohlcv(n=120)
-    walk = _walk_forward_for(ohlcv["date"].iloc[55:])
-    _write_history(tmp_path, ohlcv, monkeypatch)
-    _write_walk_forward(tmp_path, walk, monkeypatch)
+    ohlcv = synthetic_ohlcv(n=120)
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[55:])
+    write_history(tmp_path, ohlcv, monkeypatch)
+    write_walk_forward(tmp_path, walk, monkeypatch)
 
     service = ReplayService()
     listing = service.list_eligible_sessions()
@@ -449,38 +402,28 @@ def test_service_returns_replay_bundle(tmp_path, monkeypatch):
 
 
 def test_service_session_does_not_expose_model_outputs(tmp_path, monkeypatch):
-    ohlcv = _ohlcv(n=120)
-    walk = _walk_forward_for(ohlcv["date"].iloc[55:])
-    _write_history(tmp_path, ohlcv, monkeypatch)
-    _write_walk_forward(tmp_path, walk, monkeypatch)
+    ohlcv = synthetic_ohlcv(n=120)
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[55:])
+    write_history(tmp_path, ohlcv, monkeypatch)
+    write_walk_forward(tmp_path, walk, monkeypatch)
 
     listing = ReplayService().list_eligible_sessions()
     selected = listing["eligible_dates"][5]
     payload = ReplayService().get_session(selected)
 
     assert payload["available"] is True
-    for forbidden in (
-        "prob_up",
-        "direction_predicted",
-        "direction_actual",
-        "realized_return",
-        "one_day",
-        "five_day",
-        "predicted",
-        "actual",
-        "correct",
-    ):
-        assert forbidden not in payload
+    assert_session_has_no_leakage(payload)
     assert payload["series"][-1]["date"] == selected
     assert all(bar["date"] <= selected for bar in payload["series"])
+    assert payload["indicators"]["close"] == pytest.approx(payload["series"][-1]["close"])
 
 
 def test_service_result_uses_walk_forward_artifact_values(tmp_path, monkeypatch):
-    ohlcv = _ohlcv(n=120, seed=11)
+    ohlcv = synthetic_ohlcv(n=120, seed=11)
     selected = ohlcv["date"].iloc[95]
-    walk = _walk_forward_from_ohlcv(ohlcv, ohlcv["date"].iloc[60:])
-    _write_history(tmp_path, ohlcv, monkeypatch)
-    _write_walk_forward(tmp_path, walk, monkeypatch)
+    walk = walk_forward_matching_ohlcv(ohlcv, ohlcv["date"].iloc[60:])
+    write_history(tmp_path, ohlcv, monkeypatch)
+    write_walk_forward(tmp_path, walk, monkeypatch)
 
     payload = ReplayService().get_result(selected.date().isoformat())
     assert payload["available"] is True
@@ -490,15 +433,21 @@ def test_service_result_uses_walk_forward_artifact_values(tmp_path, monkeypatch)
     assert payload["five_day"]["prob_up"] == pytest.approx(float(wf_5d["prob_up"]))
     assert payload["one_day"]["realized_return"] == pytest.approx(float(wf_1d["realized_return"]))
     assert payload["five_day"]["realized_return"] == pytest.approx(float(wf_5d["realized_return"]))
+    assert payload["one_day"]["direction_predicted"] == (
+        "up" if int(wf_1d["predicted"]) == 1 else "down"
+    )
+    assert payload["five_day"]["direction_actual"] == (
+        "up" if int(wf_5d["actual"]) == 1 else "down"
+    )
     assert payload["source"] == "walk_forward_predictions"
 
 
 def test_service_never_calls_load_model(tmp_path, monkeypatch):
     """Replay must not load/run the final trained model for retrospective preds."""
-    ohlcv = _ohlcv(n=120)
-    walk = _walk_forward_for(ohlcv["date"].iloc[55:])
-    _write_history(tmp_path, ohlcv, monkeypatch)
-    _write_walk_forward(tmp_path, walk, monkeypatch)
+    ohlcv = synthetic_ohlcv(n=120)
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[55:])
+    write_history(tmp_path, ohlcv, monkeypatch)
+    write_walk_forward(tmp_path, walk, monkeypatch)
 
     import app.ml.artifacts as artifacts_module
 
@@ -516,10 +465,10 @@ def test_service_never_calls_load_model(tmp_path, monkeypatch):
 
 
 def test_service_random_always_selects_eligible_date(tmp_path, monkeypatch):
-    ohlcv = _ohlcv(n=120)
-    walk = _walk_forward_for(ohlcv["date"].iloc[55:])
-    _write_history(tmp_path, ohlcv, monkeypatch)
-    _write_walk_forward(tmp_path, walk, monkeypatch)
+    ohlcv = synthetic_ohlcv(n=120)
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[55:])
+    write_history(tmp_path, ohlcv, monkeypatch)
+    write_walk_forward(tmp_path, walk, monkeypatch)
 
     service = ReplayService(rng=random.Random(42))
     listing = service.list_eligible_sessions()
@@ -532,15 +481,19 @@ def test_service_random_always_selects_eligible_date(tmp_path, monkeypatch):
         assert payload["available"] is True
         assert payload["selected_date"] in eligible
         seen.add(payload["selected_date"])
-    # Seeded RNG should hit more than one date across draws.
     assert len(seen) >= 2
 
 
-def test_service_caches_csv_loads(tmp_path, monkeypatch):
-    ohlcv = _ohlcv(n=100)
-    walk = _walk_forward_for(ohlcv["date"].iloc[60:])
-    _write_history(tmp_path, ohlcv, monkeypatch)
-    _write_walk_forward(tmp_path, walk, monkeypatch)
+# ---------------------------------------------------------------------------
+# Caching + isolation
+# ---------------------------------------------------------------------------
+
+
+def test_service_caches_csv_loads_across_repeated_requests(tmp_path, monkeypatch):
+    ohlcv = synthetic_ohlcv(n=100)
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[60:])
+    write_history(tmp_path, ohlcv, monkeypatch)
+    write_walk_forward(tmp_path, walk, monkeypatch)
 
     import app.services.replay_service as replay_module
 
@@ -555,9 +508,34 @@ def test_service_caches_csv_loads(tmp_path, monkeypatch):
 
     service = ReplayService()
     first = service.list_eligible_sessions()
-    second = service.get_replay(first["eligible_dates"][0])
+    second = service.get_session(first["eligible_dates"][0])
+    third = service.get_result(first["eligible_dates"][0])
     assert first["available"] is True
     assert second["available"] is True
+    assert third["available"] is True
+    # History + walk-forward parsed once each, then reused.
+    assert calls["n"] == 2
+
+
+def test_clear_replay_file_caches_forces_reload(tmp_path, monkeypatch):
+    ohlcv = synthetic_ohlcv(n=100)
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[60:])
+    write_history(tmp_path, ohlcv, monkeypatch)
+    write_walk_forward(tmp_path, walk, monkeypatch)
+
+    import app.services.replay_service as replay_module
+
+    real_read_csv = pd.read_csv
+    calls = {"n": 0}
+
+    def counting_read_csv(*args, **kwargs):
+        calls["n"] += 1
+        return real_read_csv(*args, **kwargs)
+
+    monkeypatch.setattr(replay_module.pd, "read_csv", counting_read_csv)
+
+    service = ReplayService()
+    service.list_eligible_sessions()
     assert calls["n"] == 2
 
     clear_replay_file_caches()
@@ -565,43 +543,30 @@ def test_service_caches_csv_loads(tmp_path, monkeypatch):
     assert calls["n"] == 4
 
 
-def test_service_ineligible_date_is_truthful(tmp_path, monkeypatch):
-    ohlcv = _ohlcv(n=100)
-    walk = _walk_forward_for(ohlcv["date"].iloc[60:])
-    _write_history(tmp_path, ohlcv, monkeypatch)
-    _write_walk_forward(tmp_path, walk, monkeypatch)
+def test_cache_invalidates_when_artifact_mtime_changes(tmp_path, monkeypatch):
+    """Rewriting walk-forward on disk must refresh the cached frame."""
+    ohlcv = synthetic_ohlcv(n=120)
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[55:])
+    seed_replay_artifacts(tmp_path, monkeypatch, ohlcv=ohlcv, walk=walk)
 
-    early = ohlcv["date"].iloc[10].date().isoformat()
-    payload = ReplayService().get_replay(early)
-    assert payload["available"] is False
-    assert payload["reason"] in {
-        "date_not_eligible",
-        "insufficient_history",
-        "insufficient_lookback",
-        "walk_forward_prediction_unavailable",
-        "date_out_of_range",
-    }
-    assert payload["snapshot"] is None
-    assert payload["result"] is None
-    assert payload["nearest_eligible_after"] is not None
+    service = ReplayService()
+    listing = service.list_eligible_sessions()
+    selected = listing["eligible_dates"][0]
+    before = service.get_result(selected)
+    assert before["available"] is True
+    original_prob = before["one_day"]["prob_up"]
 
-
-def test_service_malformed_history_is_truthful(tmp_path, monkeypatch):
+    # Rewrite walk-forward with a different probability for the same date.
     from app import config as config_module
 
-    data_raw = tmp_path / "data"
-    data_raw.mkdir(exist_ok=True)
-    (data_raw / "spy_daily.csv").write_text("not,valid,ohlcv\n1,2,3\n")
-    monkeypatch.setattr(config_module, "DATA_RAW_DIR", data_raw)
+    updated = walk.copy()
+    mask = (updated["date"] == selected) & (updated["horizon_days"] == 1)
+    updated.loc[mask, "prob_up"] = 0.11
+    # Ensure mtime advances on filesystems with coarse timestamps.
+    time.sleep(0.02)
+    updated.to_csv(config_module.ARTIFACTS_DIR / "walk_forward_predictions.csv", index=False)
 
-    artifacts = tmp_path / "artifacts"
-    artifacts.mkdir(exist_ok=True)
-    _walk_forward_for(pd.bdate_range("2023-01-03", periods=5)).to_csv(
-        artifacts / "walk_forward_predictions.csv", index=False
-    )
-    monkeypatch.setattr(config_module, "ARTIFACTS_DIR", artifacts)
-    clear_replay_file_caches()
-
-    payload = ReplayService().list_eligible_sessions()
-    assert payload["available"] is False
-    assert payload["reason"] == "historical_dataset_malformed"
+    after = service.get_result(selected)
+    assert after["available"] is True
+    assert after["one_day"]["prob_up"] == pytest.approx(0.11)
+    assert after["one_day"]["prob_up"] != pytest.approx(original_prob)

@@ -1,161 +1,45 @@
 """End-to-end tests for GET /api/v1/replay/spy/*.
 
 Controlled synthetic artifacts only — no live network requests.
+Organized around user-visible API behavior: pre-reveal session, reveal result,
+random selection, structured validation errors, and schema conformance.
 """
 
 from __future__ import annotations
 
-import json
 import random
 from datetime import date, timedelta
 
-import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.ml.features import build_features
 from app.ml.replay import LOOKBACK_SESSIONS, REPLAY_DISCLAIMER, REPLAY_EVALUATION_NOTE
 from app.ml.schemas import ReplayResultResponse, ReplaySessionResponse
-from app.ml.targets import add_targets
 from app.services.replay_service import ReplayService, clear_replay_file_caches, get_replay_service
 from app.services.session import is_trading_day
-
-
-def _ohlcv(n: int = 200, start: str = "2020-01-02", seed: int = 7) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
-    close = 300 + np.cumsum(rng.normal(0, 1.2, size=n))
-    dates = pd.bdate_range(start=start, periods=n)
-    return pd.DataFrame(
-        {
-            "date": dates,
-            "open": close + rng.normal(0, 0.4, size=n),
-            "high": close + rng.uniform(0.3, 1.8, size=n),
-            "low": close - rng.uniform(0.3, 1.8, size=n),
-            "close": close,
-            "volume": rng.integers(1_000_000, 8_000_000, size=n),
-        }
-    )
-
-
-def _walk_forward_for(dates, *, realized_by_date: dict | None = None) -> pd.DataFrame:
-    rows: list[dict[str, object]] = []
-    realized_by_date = realized_by_date or {}
-    for i, ts in enumerate(dates):
-        iso = pd.Timestamp(ts).date().isoformat()
-        for h in (1, 5):
-            realized = realized_by_date.get(iso, {}).get(h)
-            if realized is None:
-                realized = 0.01 if i % 2 == 0 else -0.01
-            rows.append(
-                {
-                    "date": iso,
-                    "horizon_days": h,
-                    "prob_up": 0.4 + (i % 10) * 0.02,
-                    "predicted": int((0.4 + (i % 10) * 0.02) >= 0.5),
-                    "actual": int(realized > 0),
-                    "correct": int(((0.4 + (i % 10) * 0.02) >= 0.5) == (realized > 0)),
-                    "realized_return": float(realized),
-                }
-            )
-    return pd.DataFrame(rows)
-
-
-def _walk_forward_from_ohlcv(ohlcv: pd.DataFrame, dates) -> pd.DataFrame:
-    with_targets = add_targets(ohlcv.copy())
-    by_date = {
-        pd.Timestamp(row["date"]).normalize(): row for _, row in with_targets.iterrows()
-    }
-    realized: dict[str, dict[int, float]] = {}
-    for ts in dates:
-        row = by_date[pd.Timestamp(ts).normalize()]
-        iso = pd.Timestamp(ts).date().isoformat()
-        realized[iso] = {
-            1: float(row["realized_future_return_1d"]),
-            5: float(row["realized_future_return_5d"]),
-        }
-    return _walk_forward_for(dates, realized_by_date=realized)
-
-
-def _seed_replay_artifacts(
-    tmp_path,
-    monkeypatch,
-    *,
-    n: int = 140,
-    ohlcv: pd.DataFrame | None = None,
-    walk: pd.DataFrame | None = None,
-) -> pd.DataFrame:
-    from app import config as config_module
-
-    frame = ohlcv if ohlcv is not None else _ohlcv(n=n)
-    walk_frame = (
-        walk if walk is not None else _walk_forward_for(frame["date"].iloc[55:])
-    )
-
-    data_raw = tmp_path / "data"
-    data_raw.mkdir(exist_ok=True)
-    frame.to_csv(data_raw / "spy_daily.csv", index=False)
-    monkeypatch.setattr(config_module, "DATA_RAW_DIR", data_raw)
-
-    artifacts = tmp_path / "artifacts"
-    artifacts.mkdir(exist_ok=True)
-    walk_frame.to_csv(artifacts / "walk_forward_predictions.csv", index=False)
-    (artifacts / "model_version.txt").write_text("v-test-replay\n")
-    (artifacts / "training_metadata.json").write_text(
-        json.dumps(
-            {
-                "1d": {
-                    "holdout_start": "2020-03-01",
-                    "holdout_end": "2020-07-01",
-                    "model_name": "logistic_regression",
-                    "n_holdout": 80,
-                },
-                "5d": {
-                    "holdout_start": "2020-03-01",
-                    "holdout_end": "2020-07-01",
-                    "model_name": "logistic_regression",
-                    "n_holdout": 80,
-                },
-            }
-        )
-    )
-    monkeypatch.setattr(config_module, "ARTIFACTS_DIR", artifacts)
-    clear_replay_file_caches()
-    return frame
+from tests.replay_fixtures import (
+    assert_session_has_no_leakage,
+    seed_replay_artifacts,
+    synthetic_ohlcv,
+    synthetic_walk_forward,
+    walk_forward_matching_ohlcv,
+)
 
 
 def _client() -> TestClient:
     return TestClient(create_app())
 
 
-def _assert_no_leakage(payload: dict) -> None:
-    """Session payloads must not expose model outputs or future labels."""
-    for forbidden in (
-        "prob_up",
-        "direction_predicted",
-        "direction_actual",
-        "realized_return",
-        "one_day",
-        "five_day",
-        "predicted",
-        "actual",
-        "correct",
-    ):
-        assert forbidden not in payload
-    for bar in payload.get("series", []):
-        assert set(bar.keys()) <= {"date", "open", "high", "low", "close", "volume"}
-    indicators = payload.get("indicators") or {}
-    for forbidden in ("prob_up", "realized_return", "direction_predicted", "direction_actual"):
-        assert forbidden not in indicators
-
-
 # ---------------------------------------------------------------------------
-# Happy paths
+# Pre-reveal session
 # ---------------------------------------------------------------------------
 
 
 def test_session_endpoint_returns_pre_reveal_context(tmp_path, monkeypatch):
-    ohlcv = _seed_replay_artifacts(tmp_path, monkeypatch)
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
     selected = ohlcv["date"].iloc[90].date().isoformat()
 
     with _client() as client:
@@ -181,11 +65,11 @@ def test_session_endpoint_returns_pre_reveal_context(tmp_path, monkeypatch):
     assert body["source"] == "local_historical_csv"
     assert "walk-forward" in body["methodology"]["summary"].lower()
     assert body["disclaimer"] == REPLAY_DISCLAIMER
-    _assert_no_leakage(body)
+    assert_session_has_no_leakage(body)
 
 
-def test_session_chart_never_contains_rows_after_selected_date(tmp_path, monkeypatch):
-    ohlcv = _seed_replay_artifacts(tmp_path, monkeypatch)
+def test_session_chart_ends_exactly_on_selected_date(tmp_path, monkeypatch):
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
     selected = ohlcv["date"].iloc[100].date().isoformat()
 
     with _client() as client:
@@ -198,11 +82,49 @@ def test_session_chart_never_contains_rows_after_selected_date(tmp_path, monkeyp
     assert not any(d > selected for d in dates)
 
 
-def test_session_endpoint_regression_future_row_mutation(tmp_path, monkeypatch):
+def test_session_never_contains_model_probabilities_or_future_outcomes(tmp_path, monkeypatch):
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
+    selected = ohlcv["date"].iloc[95].date().isoformat()
+
+    with _client() as client:
+        body = client.get("/api/v1/replay/spy/session", params={"date": selected}).json()
+
+    ReplaySessionResponse.model_validate(body)
+    assert_session_has_no_leakage(body)
+    # Nested chart points stay OHLCV-only.
+    for bar in body["series"]:
+        assert set(bar.keys()) == {"date", "open", "high", "low", "close", "volume"}
+
+
+def test_session_indicators_match_as_of_selected_date_only(tmp_path, monkeypatch):
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
+    selected_ts = ohlcv["date"].iloc[100]
+    selected = selected_ts.date().isoformat()
+
+    with _client() as client:
+        body = client.get("/api/v1/replay/spy/session", params={"date": selected}).json()
+
+    as_of = ohlcv[ohlcv["date"] <= selected_ts]
+    features = build_features(as_of).iloc[-1]
+    indicators = body["indicators"]
+    assert indicators["close"] == pytest.approx(float(as_of["close"].iloc[-1]))
+    assert indicators["momentum_5d"] == pytest.approx(float(features["return_5d"]))
+    assert indicators["rsi_14"] == pytest.approx(float(features["rsi_14"]))
+    assert indicators["rolling_vol_20"] == pytest.approx(float(features["rolling_vol_20"]))
+    assert indicators["distance_from_sma_20"] == pytest.approx(
+        float(features["distance_from_sma_20"])
+    )
+    assert indicators["opening_gap_pct"] == pytest.approx(float(features["opening_gap_pct"]))
+    assert indicators["relative_volume"] == pytest.approx(
+        float(features["volume_to_20d_avg"]) + 1.0
+    )
+
+
+def test_session_leakage_regression_future_row_mutation(tmp_path, monkeypatch):
     """Mutating OHLCV rows after the selected date must not change the session snapshot."""
-    ohlcv = _ohlcv(n=140, seed=17)
-    walk = _walk_forward_for(ohlcv["date"].iloc[55:])
-    _seed_replay_artifacts(tmp_path, monkeypatch, ohlcv=ohlcv, walk=walk)
+    ohlcv = synthetic_ohlcv(n=140, seed=17)
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[55:])
+    seed_replay_artifacts(tmp_path, monkeypatch, ohlcv=ohlcv, walk=walk)
     selected = ohlcv["date"].iloc[95].date().isoformat()
 
     with _client() as client:
@@ -212,7 +134,7 @@ def test_session_endpoint_regression_future_row_mutation(tmp_path, monkeypatch):
     mask = poisoned["date"] > pd.Timestamp(selected)
     poisoned.loc[mask, "close"] = poisoned.loc[mask, "close"] * 5.0
     poisoned.loc[mask, "volume"] = poisoned.loc[mask, "volume"] + 99_000_000
-    _seed_replay_artifacts(tmp_path, monkeypatch, ohlcv=poisoned, walk=walk)
+    seed_replay_artifacts(tmp_path, monkeypatch, ohlcv=poisoned, walk=walk)
 
     with _client() as client:
         after = client.get("/api/v1/replay/spy/session", params={"date": selected}).json()
@@ -220,16 +142,20 @@ def test_session_endpoint_regression_future_row_mutation(tmp_path, monkeypatch):
     assert before["available"] and after["available"]
     assert before["series"] == after["series"]
     assert before["indicators"] == after["indicators"]
-    _assert_no_leakage(after)
+    assert_session_has_no_leakage(after)
+
+
+# ---------------------------------------------------------------------------
+# Random selection
+# ---------------------------------------------------------------------------
 
 
 def test_random_endpoint_always_selects_eligible_date(tmp_path, monkeypatch):
-    ohlcv = _seed_replay_artifacts(tmp_path, monkeypatch)
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
     listing = ReplayService().list_eligible_sessions()
     eligible = set(listing["eligible_dates"])
     assert len(eligible) >= 5
 
-    # One shared RNG instance so successive /random draws advance the stream.
     rng = random.Random(7)
     app = create_app()
     app.dependency_overrides[get_replay_service] = lambda: ReplayService(rng=rng)
@@ -242,7 +168,7 @@ def test_random_endpoint_always_selects_eligible_date(tmp_path, monkeypatch):
                 assert body["available"] is True
                 assert body["selected_date"] in eligible
                 assert body["min_eligible_date"] <= body["selected_date"] <= body["max_eligible_date"]
-                _assert_no_leakage(body)
+                assert_session_has_no_leakage(body)
                 seen.add(body["selected_date"])
             assert len(seen) >= 2
     finally:
@@ -252,10 +178,15 @@ def test_random_endpoint_always_selects_eligible_date(tmp_path, monkeypatch):
     assert eligible <= history
 
 
+# ---------------------------------------------------------------------------
+# Reveal result
+# ---------------------------------------------------------------------------
+
+
 def test_result_endpoint_returns_walk_forward_outcomes(tmp_path, monkeypatch):
-    ohlcv = _ohlcv(n=140, seed=5)
-    walk = _walk_forward_from_ohlcv(ohlcv, ohlcv["date"].iloc[55:])
-    _seed_replay_artifacts(tmp_path, monkeypatch, ohlcv=ohlcv, walk=walk)
+    ohlcv = synthetic_ohlcv(n=140, seed=5)
+    walk = walk_forward_matching_ohlcv(ohlcv, ohlcv["date"].iloc[55:])
+    seed_replay_artifacts(tmp_path, monkeypatch, ohlcv=ohlcv, walk=walk)
     selected_idx = 90
     selected = ohlcv["date"].iloc[selected_idx].date().isoformat()
 
@@ -275,16 +206,25 @@ def test_result_endpoint_returns_walk_forward_outcomes(tmp_path, monkeypatch):
     assert body["five_day"]["realized_return"] == pytest.approx(expected_5d)
 
     wf_1d = walk[(walk["date"] == selected) & (walk["horizon_days"] == 1)].iloc[0]
+    wf_5d = walk[(walk["date"] == selected) & (walk["horizon_days"] == 5)].iloc[0]
     assert body["one_day"]["prob_up"] == pytest.approx(float(wf_1d["prob_up"]))
+    assert body["five_day"]["prob_up"] == pytest.approx(float(wf_5d["prob_up"]))
+    assert body["one_day"]["direction_predicted"] == (
+        "up" if int(wf_1d["predicted"]) == 1 else "down"
+    )
+    assert body["five_day"]["direction_actual"] == (
+        "up" if int(wf_5d["actual"]) == 1 else "down"
+    )
     assert body["source"] == "walk_forward_predictions"
     assert body["evaluation_note"] == REPLAY_EVALUATION_NOTE
     assert body["disclaimer"] == REPLAY_DISCLAIMER
     assert body["model_version"] == "v-test-replay"
     assert body["model_metadata"]["model_name_1d"] == "logistic_regression"
+    assert "out-of-sample walk-forward" in body["evaluation_note"].lower()
 
 
 def test_result_endpoint_does_not_call_load_model(tmp_path, monkeypatch):
-    ohlcv = _seed_replay_artifacts(tmp_path, monkeypatch)
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
     selected = ohlcv["date"].iloc[90].date().isoformat()
 
     import app.ml.artifacts as artifacts_module
@@ -305,7 +245,7 @@ def test_result_endpoint_does_not_call_load_model(tmp_path, monkeypatch):
 
 
 def test_session_and_result_are_separated(tmp_path, monkeypatch):
-    ohlcv = _seed_replay_artifacts(tmp_path, monkeypatch)
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
     selected = ohlcv["date"].iloc[100].date().isoformat()
 
     with _client() as client:
@@ -314,18 +254,19 @@ def test_session_and_result_are_separated(tmp_path, monkeypatch):
 
     ReplaySessionResponse.model_validate(session)
     ReplayResultResponse.model_validate(result)
-    _assert_no_leakage(session)
+    assert_session_has_no_leakage(session)
     assert result["one_day"]["prob_up"] is not None
     assert "series" not in result
+    assert "indicators" not in result
 
 
 # ---------------------------------------------------------------------------
-# Validation / structured errors
+# Structured validation errors + nearest neighbors
 # ---------------------------------------------------------------------------
 
 
 def test_weekend_returns_structured_error_with_neighbors(tmp_path, monkeypatch):
-    ohlcv = _seed_replay_artifacts(tmp_path, monkeypatch)
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
     mid = ohlcv["date"].iloc[80].date()
     candidate = mid
     while candidate.weekday() != 5:
@@ -340,15 +281,14 @@ def test_weekend_returns_structured_error_with_neighbors(tmp_path, monkeypatch):
     ReplaySessionResponse.model_validate(body)
     assert body["available"] is False
     assert body["reason"] == "weekend"
+    assert "weekend" in body["detail"].lower()
     assert body["nearest_eligible_before"] is not None or body["nearest_eligible_after"] is not None
     assert body["series"] == []
-    _assert_no_leakage(body)
+    assert_session_has_no_leakage(body)
 
 
 def test_market_holiday_returns_structured_error(tmp_path, monkeypatch):
-    ohlcv = _seed_replay_artifacts(tmp_path, monkeypatch)
-    # Choose a holiday that is not present as a bar in the synthetic history so
-    # the calendar check (not the eligible-set short-circuit) applies.
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
     holiday = "2020-12-25"
     assert not is_trading_day(date.fromisoformat(holiday))
     history_isos = {pd.Timestamp(ts).date().isoformat() for ts in ohlcv["date"]}
@@ -362,13 +302,14 @@ def test_market_holiday_returns_structured_error(tmp_path, monkeypatch):
     ReplayResultResponse.model_validate(body)
     assert body["available"] is False
     assert body["reason"] == "market_holiday"
+    assert "holiday" in body["detail"].lower()
     assert body["one_day"] is None
     assert body["five_day"] is None
     assert body["nearest_eligible_before"] is not None or body["nearest_eligible_after"] is not None
 
 
 def test_date_out_of_range_includes_neighbors(tmp_path, monkeypatch):
-    _seed_replay_artifacts(tmp_path, monkeypatch)
+    _ = seed_replay_artifacts(tmp_path, monkeypatch)
     far_future = "2030-01-02"
 
     with _client() as client:
@@ -385,12 +326,11 @@ def test_date_out_of_range_includes_neighbors(tmp_path, monkeypatch):
 
 
 def test_unsupported_date_includes_nearby_eligible_dates(tmp_path, monkeypatch):
-    ohlcv = _seed_replay_artifacts(tmp_path, monkeypatch)
-    # Gap inside the eligible window: drop one date from walk-forward.
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
     from app import config as config_module
 
     target = ohlcv["date"].iloc[100].date().isoformat()
-    walk = _walk_forward_for(ohlcv["date"].iloc[55:])
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[55:])
     walk = walk[walk["date"] != target]
     artifacts = config_module.ARTIFACTS_DIR
     walk.to_csv(artifacts / "walk_forward_predictions.csv", index=False)
@@ -411,7 +351,7 @@ def test_unsupported_date_includes_nearby_eligible_dates(tmp_path, monkeypatch):
 
 
 def test_insufficient_history_date(tmp_path, monkeypatch):
-    ohlcv = _seed_replay_artifacts(tmp_path, monkeypatch)
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
     early = ohlcv["date"].iloc[10].date().isoformat()
 
     with _client() as client:
@@ -431,8 +371,8 @@ def test_insufficient_history_date(tmp_path, monkeypatch):
 def test_missing_walk_forward_prediction(tmp_path, monkeypatch):
     from app import config as config_module
 
-    ohlcv = _ohlcv(n=140)
-    walk = _walk_forward_for(ohlcv["date"].iloc[60:90])
+    ohlcv = synthetic_ohlcv(n=140)
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[60:90])
     data_raw = tmp_path / "data"
     data_raw.mkdir(exist_ok=True)
     ohlcv.to_csv(data_raw / "spy_daily.csv", index=False)
@@ -448,6 +388,7 @@ def test_missing_walk_forward_prediction(tmp_path, monkeypatch):
         r = client.get("/api/v1/replay/spy/session", params={"date": later})
 
     body = r.json()
+    ReplaySessionResponse.model_validate(body)
     assert body["available"] is False
     assert body["reason"] in {
         "walk_forward_prediction_unavailable",
@@ -458,8 +399,8 @@ def test_missing_walk_forward_prediction(tmp_path, monkeypatch):
 def test_missing_future_outcome(tmp_path, monkeypatch):
     from app import config as config_module
 
-    ohlcv = _ohlcv(n=140)
-    walk = _walk_forward_for(ohlcv["date"].iloc[60:])
+    ohlcv = synthetic_ohlcv(n=140)
+    walk = synthetic_walk_forward(ohlcv["date"].iloc[60:])
     target = ohlcv["date"].iloc[100].date().isoformat()
     walk = walk[~((walk["date"] == target) & (walk["horizon_days"] == 5))]
 
@@ -502,12 +443,13 @@ def test_missing_history_artifact(tmp_path, monkeypatch):
     ReplaySessionResponse.model_validate(body)
     assert body["available"] is False
     assert body["reason"] == "historical_dataset_missing"
+    assert body["series"] == []
 
 
 def test_malformed_walk_forward_artifact_is_truthful(tmp_path, monkeypatch):
     from app import config as config_module
 
-    ohlcv = _ohlcv(n=100)
+    ohlcv = synthetic_ohlcv(n=100)
     data_raw = tmp_path / "data"
     data_raw.mkdir(exist_ok=True)
     ohlcv.to_csv(data_raw / "spy_daily.csv", index=False)
@@ -515,7 +457,6 @@ def test_malformed_walk_forward_artifact_is_truthful(tmp_path, monkeypatch):
 
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir(exist_ok=True)
-    # Missing required columns.
     pd.DataFrame({"date": ["2020-06-01"], "prob_up": [0.5]}).to_csv(
         artifacts / "walk_forward_predictions.csv", index=False
     )
@@ -542,17 +483,113 @@ def test_malformed_walk_forward_artifact_is_truthful(tmp_path, monkeypatch):
     assert result["reason"] == "walk_forward_artifact_malformed"
 
 
+def test_malformed_history_artifact_is_truthful(tmp_path, monkeypatch):
+    from app import config as config_module
+
+    data_raw = tmp_path / "data"
+    data_raw.mkdir(exist_ok=True)
+    (data_raw / "spy_daily.csv").write_text("garbage,csv\n1,2\n")
+    monkeypatch.setattr(config_module, "DATA_RAW_DIR", data_raw)
+
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir(exist_ok=True)
+    synthetic_walk_forward(pd.bdate_range("2020-06-01", periods=10)).to_csv(
+        artifacts / "walk_forward_predictions.csv", index=False
+    )
+    monkeypatch.setattr(config_module, "ARTIFACTS_DIR", artifacts)
+    clear_replay_file_caches()
+
+    with _client() as client:
+        body = client.get(
+            "/api/v1/replay/spy/session",
+            params={"date": "2020-06-15"},
+        ).json()
+
+    ReplaySessionResponse.model_validate(body)
+    assert body["available"] is False
+    assert body["reason"] == "historical_dataset_malformed"
+    assert body["series"] == []
+
+
 @pytest.mark.parametrize("path", ["/api/v1/replay/spy/session", "/api/v1/replay/spy/result"])
 def test_missing_date_query_returns_422(path, tmp_path, monkeypatch):
-    _seed_replay_artifacts(tmp_path, monkeypatch)
+    seed_replay_artifacts(tmp_path, monkeypatch)
     with _client() as client:
         r = client.get(path)
     assert r.status_code == 422
 
 
+def test_invalid_date_format_returns_structured_unavailable(tmp_path, monkeypatch):
+    seed_replay_artifacts(tmp_path, monkeypatch)
+
+    with _client() as client:
+        body = client.get(
+            "/api/v1/replay/spy/session",
+            params={"date": "not-a-date"},
+        ).json()
+
+    ReplaySessionResponse.model_validate(body)
+    assert body["available"] is False
+    assert body["reason"] == "invalid_date"
+    assert body["series"] == []
+
+
+# ---------------------------------------------------------------------------
+# Caching + isolation + no live network
+# ---------------------------------------------------------------------------
+
+
+def test_repeated_api_requests_reuse_cached_file_loads(tmp_path, monkeypatch):
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
+    selected = ohlcv["date"].iloc[90].date().isoformat()
+
+    import app.services.replay_service as replay_module
+
+    real_read_csv = pd.read_csv
+    calls = {"n": 0}
+
+    def counting_read_csv(*args, **kwargs):
+        calls["n"] += 1
+        return real_read_csv(*args, **kwargs)
+
+    monkeypatch.setattr(replay_module.pd, "read_csv", counting_read_csv)
+
+    with _client() as client:
+        assert client.get("/api/v1/replay/spy/session", params={"date": selected}).status_code == 200
+        assert client.get("/api/v1/replay/spy/result", params={"date": selected}).status_code == 200
+        assert client.get("/api/v1/replay/spy/random").status_code == 200
+
+    assert calls["n"] == 2
+
+
+def test_api_cache_reset_allows_fresh_reads(tmp_path, monkeypatch):
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
+    selected = ohlcv["date"].iloc[90].date().isoformat()
+
+    import app.services.replay_service as replay_module
+
+    real_read_csv = pd.read_csv
+    calls = {"n": 0}
+
+    def counting_read_csv(*args, **kwargs):
+        calls["n"] += 1
+        return real_read_csv(*args, **kwargs)
+
+    monkeypatch.setattr(replay_module.pd, "read_csv", counting_read_csv)
+
+    with _client() as client:
+        client.get("/api/v1/replay/spy/session", params={"date": selected})
+    assert calls["n"] == 2
+
+    clear_replay_file_caches()
+    with _client() as client:
+        client.get("/api/v1/replay/spy/session", params={"date": selected})
+    assert calls["n"] == 4
+
+
 def test_no_alpha_vantage_calls(tmp_path, monkeypatch, httpx_mock):
     """Replay must not issue upstream HTTP requests."""
-    ohlcv = _seed_replay_artifacts(tmp_path, monkeypatch)
+    ohlcv = seed_replay_artifacts(tmp_path, monkeypatch)
     selected = ohlcv["date"].iloc[90].date().isoformat()
 
     with _client() as client:
