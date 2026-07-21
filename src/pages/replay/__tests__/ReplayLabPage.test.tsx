@@ -1,9 +1,12 @@
-import { screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { describe, expect, it, vi } from 'vitest'
 import { ReplayLabPage } from '../ReplayLabPage'
-import { demoReplaySession } from '@/features/replay/demo/demoResponses'
+import {
+  demoReplayResult,
+  demoReplaySession,
+} from '@/features/replay/demo/demoResponses'
 import { ENV } from '@/lib/api/env'
 import { renderWithProviders } from '@/test/renderPage'
 import { server } from '@/test/msw/server'
@@ -178,7 +181,7 @@ describe('ReplayLabPage', () => {
     })
   })
 
-  it('does not request the result endpoint automatically', async () => {
+  it('does not request the result endpoint on initial load', async () => {
     const resultSpy = vi.fn()
     server.use(
       http.get(`${base}/replay/spy/result`, () => {
@@ -195,4 +198,222 @@ describe('ReplayLabPage', () => {
 
     expect(resultSpy).not.toHaveBeenCalled()
   })
+
+  it('keeps the result endpoint idle while the prediction is editable and after lock', async () => {
+    const resultSpy = vi.fn()
+    server.use(
+      http.get(`${base}/replay/spy/result`, () => {
+        resultSpy()
+        return HttpResponse.json(demoReplayResult)
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderWithProviders(<ReplayLabPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /your prediction/i })).toBeInTheDocument()
+    })
+
+    expect(resultSpy).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('radio', { name: /one trading session/i }))
+    await user.click(screen.getByRole('radio', { name: /^up$/i }))
+    await user.click(screen.getByLabelText(/confidence/i))
+    // Range inputs need a change event to commit a value.
+    fireConfidence(70)
+
+    expect(screen.getByRole('button', { name: /lock prediction/i })).toBeEnabled()
+    expect(resultSpy).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: /lock prediction/i }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/locked prediction summary/i)).toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: /reveal outcome/i })).toBeInTheDocument()
+    expect(resultSpy).not.toHaveBeenCalled()
+  })
+
+  it('requests the result endpoint only after Reveal outcome', async () => {
+    const resultSpy = vi.fn()
+    server.use(
+      http.get(`${base}/replay/spy/result`, () => {
+        resultSpy()
+        return HttpResponse.json(demoReplayResult)
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderWithProviders(<ReplayLabPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /your prediction/i })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('radio', { name: /five trading sessions/i }))
+    await user.click(screen.getByRole('radio', { name: /^down$/i }))
+    fireConfidence(70)
+    await user.click(screen.getByRole('button', { name: /lock prediction/i }))
+
+    expect(resultSpy).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: /reveal outcome/i }))
+
+    await waitFor(() => {
+      expect(resultSpy).toHaveBeenCalledTimes(1)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/outcome comparison/i)).toBeInTheDocument()
+    })
+    const comparison = screen.getByLabelText(/outcome comparison/i)
+    expect(comparison).toHaveTextContent(/your implied p\(up\)/i)
+    expect(comparison).toHaveTextContent('30.0%')
+    expect(comparison).toHaveTextContent(/model probability \(selected horizon\)/i)
+    expect(comparison).toHaveTextContent(/you were correct/i)
+    expect(comparison).toHaveTextContent(/model was correct/i)
+    expect(comparison).toHaveTextContent(/out-of-sample walk-forward evaluation/i)
+    expect(screen.getByText(/other horizon \(not scored this round\)/i)).toBeInTheDocument()
+  })
+
+  it('requires horizon, direction, and confidence before locking', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ReplayLabPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /lock prediction/i })).toBeDisabled()
+    })
+
+    await user.click(screen.getByRole('radio', { name: /one trading session/i }))
+    expect(screen.getByRole('button', { name: /lock prediction/i })).toBeDisabled()
+
+    await user.click(screen.getByRole('radio', { name: /^up$/i }))
+    expect(screen.getByRole('button', { name: /lock prediction/i })).toBeDisabled()
+
+    fireConfidence(55)
+    expect(screen.getByRole('button', { name: /lock prediction/i })).toBeEnabled()
+  })
+
+  it('freezes prediction controls after lock and supports cancel before reveal', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ReplayLabPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /your prediction/i })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('radio', { name: /one trading session/i }))
+    await user.click(screen.getByRole('radio', { name: /^up$/i }))
+    fireConfidence(65)
+    await user.click(screen.getByRole('button', { name: /lock prediction/i }))
+
+    expect(screen.getByRole('radio', { name: /one trading session/i })).toBeDisabled()
+    expect(screen.getByRole('radio', { name: /^up$/i })).toBeDisabled()
+    expect(screen.getByLabelText(/confidence/i)).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /lock prediction/i })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /cancel lock/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /lock prediction/i })).toBeInTheDocument()
+    })
+    expect(screen.getByRole('radio', { name: /one trading session/i })).toBeEnabled()
+  })
+
+  it('resets prediction workflow when loading another session', async () => {
+    const resultSpy = vi.fn()
+    server.use(
+      http.get(`${base}/replay/spy/result`, () => {
+        resultSpy()
+        return HttpResponse.json(demoReplayResult)
+      }),
+      http.get(`${base}/replay/spy/session`, ({ request }) => {
+        const url = new URL(request.url)
+        const date = url.searchParams.get('date')
+        return HttpResponse.json({
+          ...demoReplaySession,
+          selected_date: date,
+        })
+      }),
+    )
+
+    const user = userEvent.setup()
+    renderWithProviders(<ReplayLabPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /your prediction/i })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('radio', { name: /one trading session/i }))
+    await user.click(screen.getByRole('radio', { name: /^up$/i }))
+    fireConfidence(70)
+    await user.click(screen.getByRole('button', { name: /lock prediction/i }))
+    await user.click(screen.getByRole('button', { name: /reveal outcome/i }))
+
+    await waitFor(() => {
+      expect(resultSpy).toHaveBeenCalled()
+    })
+
+    const input = screen.getByLabelText(/historical date/i)
+    await user.clear(input)
+    await user.type(input, '2024-09-13')
+    await user.click(screen.getByRole('button', { name: /load session/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /lock prediction/i })).toBeDisabled()
+    })
+    expect(screen.queryByRole('button', { name: /reveal outcome/i })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/outcome comparison/i)).not.toBeInTheDocument()
+
+    const callsAfterReset = resultSpy.mock.calls.length
+    await user.click(screen.getByRole('radio', { name: /five trading sessions/i }))
+    await user.click(screen.getByRole('radio', { name: /^down$/i }))
+    fireConfidence(80)
+    await user.click(screen.getByRole('button', { name: /lock prediction/i }))
+    expect(resultSpy).toHaveBeenCalledTimes(callsAfterReset)
+  })
+
+  it('keeps the locked prediction visible when the result request fails', async () => {
+    server.use(
+      http.get(`${base}/replay/spy/result`, () => HttpResponse.error()),
+    )
+
+    const user = userEvent.setup()
+    renderWithProviders(<ReplayLabPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /your prediction/i })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('radio', { name: /one trading session/i }))
+    await user.click(screen.getByRole('radio', { name: /^up$/i }))
+    fireConfidence(70)
+    await user.click(screen.getByRole('button', { name: /lock prediction/i }))
+    await user.click(screen.getByRole('button', { name: /reveal outcome/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/could not load outcome/i)).toBeInTheDocument()
+    })
+    const lockedSummary = screen.getByLabelText(/locked prediction summary/i)
+    expect(lockedSummary).toBeInTheDocument()
+    expect(lockedSummary).toHaveTextContent(/implied p\(up\)/i)
+    expect(lockedSummary).toHaveTextContent('70.0%')
+  })
 })
+
+/** Commit a confidence value on the range input (user-event is awkward for ranges). */
+function fireConfidence(value: number) {
+  const input = screen.getByLabelText(/confidence/i) as HTMLInputElement
+  act(() => {
+    input.focus()
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      'value',
+    )?.set
+    nativeInputValueSetter?.call(input, String(value))
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+}
+

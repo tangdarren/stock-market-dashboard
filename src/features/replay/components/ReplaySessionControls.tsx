@@ -31,7 +31,7 @@ export function ReplaySessionControls({
             max={maxEligibleDate ?? undefined}
             onChange={(event) => onDateChange(event.target.value)}
             disabled={isLoading}
-            className="w-full rounded-xl border border-white/[0.1] bg-white/[0.03] px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-[#00FFB2]/40 disabled:opacity-50 [color-scheme:dark]"
+            className="w-full rounded-xl border border-white/[0.1] bg-white/[0.03] px-4 py-2.5 text-sm text-white outline-none transition-colors focus:border-[#00FFB2]/40 focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60 disabled:opacity-50 [color-scheme:dark]"
           />
         </label>
 
@@ -41,7 +41,7 @@ export function ReplaySessionControls({
             onClick={onLoadSession}
             disabled={isLoading || !dateInput}
             aria-busy={isLoading}
-            className="rounded-xl bg-[#00FFB2] px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-[#00e6a0] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-xl bg-[#00FFB2] px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-[#00e6a0] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Load session
           </button>
@@ -49,7 +49,7 @@ export function ReplaySessionControls({
             type="button"
             onClick={onRandomSession}
             disabled={isLoading}
-            className="rounded-xl border border-white/[0.12] bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-100 transition-colors hover:border-[#00FFB2]/30 hover:text-[#00FFB2] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-xl border border-white/[0.12] bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-100 transition-colors hover:border-[#00FFB2]/30 hover:text-[#00FFB2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Random session
           </button>

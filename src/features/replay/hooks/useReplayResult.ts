@@ -9,8 +9,8 @@ const ONE_HOUR = 60 * 60 * 1000
 /**
  * Fetch the reveal payload for a replay date.
  *
- * Intentionally disabled by default — the prediction workflow must complete
- * before this request is enabled in a later iteration.
+ * Keep `enabled` false until the learner deliberately reveals the outcome.
+ * Locking a prediction alone must not trigger this request.
  */
 export function useReplayResult(
   date: string | null,

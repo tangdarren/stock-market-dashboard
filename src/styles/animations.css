@@ -16,6 +16,21 @@
   animation: fadeIn 0.6s ease both;
 }
 
+@keyframes replayReveal {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-replay-reveal {
+  animation: replayReveal 0.45s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-replay-reveal {
+    animation: none;
+  }
+}
+
 .animate-spin {
   animation: spin 1s linear infinite;
 }
