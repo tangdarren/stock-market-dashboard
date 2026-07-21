@@ -8,6 +8,7 @@ describe('replayPredictionReducer', () => {
   it('starts in reviewing with no reveal request', () => {
     expect(replayPredictionInitialState.phase).toBe('reviewing')
     expect(replayPredictionInitialState.revealRequested).toBe(false)
+    expect(replayPredictionInitialState.revealId).toBeNull()
     expect(replayPredictionInitialState.locked).toBeNull()
   })
 
@@ -72,10 +73,20 @@ describe('replayPredictionReducer', () => {
     state = replayPredictionReducer(state, { type: 'lock' })
     expect(state.revealRequested).toBe(false)
 
-    state = replayPredictionReducer(state, { type: 'request_reveal' })
+    state = replayPredictionReducer(state, {
+      type: 'request_reveal',
+      revealId: 'reveal-stable-1',
+    })
     expect(state.revealRequested).toBe(true)
+    expect(state.revealId).toBe('reveal-stable-1')
     expect(state.phase).toBe('locked')
     expect(state.locked?.probUp).toBeCloseTo(0.2)
+
+    const again = replayPredictionReducer(state, {
+      type: 'request_reveal',
+      revealId: 'reveal-other',
+    })
+    expect(again).toEqual(state)
   })
 
   it('marks revealed only after a reveal was requested', () => {
@@ -105,6 +116,7 @@ describe('replayPredictionReducer', () => {
     expect(state.phase).toBe('configuring')
     expect(state.locked).toBeNull()
     expect(state.revealRequested).toBe(false)
+    expect(state.revealId).toBeNull()
     expect(state.draft).toEqual({
       horizon: 1,
       direction: 'up',
@@ -118,7 +130,10 @@ describe('replayPredictionReducer', () => {
     state = replayPredictionReducer(state, { type: 'set_direction', direction: 'up' })
     state = replayPredictionReducer(state, { type: 'set_confidence', confidence: 90 })
     state = replayPredictionReducer(state, { type: 'lock' })
-    state = replayPredictionReducer(state, { type: 'request_reveal' })
+    state = replayPredictionReducer(state, {
+      type: 'request_reveal',
+      revealId: 'reveal-restart',
+    })
     state = replayPredictionReducer(state, { type: 'mark_revealed' })
     state = replayPredictionReducer(state, { type: 'restart' })
 
@@ -127,6 +142,7 @@ describe('replayPredictionReducer', () => {
       draft: { horizon: null, direction: null, confidence: null },
       locked: null,
       revealRequested: false,
+      revealId: null,
     })
   })
 

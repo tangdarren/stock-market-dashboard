@@ -1,5 +1,6 @@
 import { useCallback, useReducer } from 'react'
 import type { ReplayDirection } from '../api/types'
+import { createAttemptId } from '../history/buildAttempt'
 import {
   EMPTY_PREDICTION_DRAFT,
   lockPrediction,
@@ -15,6 +16,11 @@ export interface ReplayPredictionState {
   locked: LockedReplayPrediction | null
   /** When true, the result endpoint may be requested. */
   revealRequested: boolean
+  /**
+   * Stable id for the current reveal session. Used as the history attempt id
+   * so Strict Mode, rerenders, and repeated result responses cannot double-save.
+   */
+  revealId: string | null
 }
 
 type Action =
@@ -25,7 +31,7 @@ type Action =
   | { type: 'lock' }
   | { type: 'cancel_lock' }
   | { type: 'restart' }
-  | { type: 'request_reveal' }
+  | { type: 'request_reveal'; revealId?: string }
   | { type: 'mark_revealed' }
 
 const initialState: ReplayPredictionState = {
@@ -33,6 +39,7 @@ const initialState: ReplayPredictionState = {
   draft: EMPTY_PREDICTION_DRAFT,
   locked: null,
   revealRequested: false,
+  revealId: null,
 }
 
 function reduce(state: ReplayPredictionState, action: Action): ReplayPredictionState {
@@ -76,6 +83,7 @@ function reduce(state: ReplayPredictionState, action: Action): ReplayPredictionS
         phase: 'locked',
         locked,
         revealRequested: false,
+        revealId: null,
       }
     }
 
@@ -88,6 +96,7 @@ function reduce(state: ReplayPredictionState, action: Action): ReplayPredictionS
         phase: 'configuring',
         locked: null,
         revealRequested: false,
+        revealId: null,
       }
     }
 
@@ -99,14 +108,20 @@ function reduce(state: ReplayPredictionState, action: Action): ReplayPredictionS
         draft: EMPTY_PREDICTION_DRAFT,
         locked: null,
         revealRequested: false,
+        revealId: null,
       }
     }
 
     case 'request_reveal': {
       if (state.phase !== 'locked' || !state.locked) return state
+      // Keep the existing revealId when reveal was already requested (retries).
+      if (state.revealRequested) {
+        return state
+      }
       return {
         ...state,
         revealRequested: true,
+        revealId: action.revealId ?? state.revealId ?? createAttemptId(),
       }
     }
 
@@ -142,7 +157,10 @@ export function useReplayPrediction() {
   const lock = useCallback(() => dispatch({ type: 'lock' }), [])
   const cancelLock = useCallback(() => dispatch({ type: 'cancel_lock' }), [])
   const restart = useCallback(() => dispatch({ type: 'restart' }), [])
-  const requestReveal = useCallback(() => dispatch({ type: 'request_reveal' }), [])
+  const requestReveal = useCallback(
+    () => dispatch({ type: 'request_reveal', revealId: createAttemptId() }),
+    [],
+  )
   const markRevealed = useCallback(() => dispatch({ type: 'mark_revealed' }), [])
 
   const canLock =

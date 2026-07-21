@@ -7,6 +7,11 @@ import {
   demoReplayResult,
   demoReplaySession,
 } from '@/features/replay/demo/demoResponses'
+import {
+  appendAttempt,
+  parseHistory,
+  REPLAY_HISTORY_STORAGE_KEY,
+} from '@/features/replay/history'
 import { ENV } from '@/lib/api/env'
 import { renderWithProviders } from '@/test/renderPage'
 import { server } from '@/test/msw/server'
@@ -399,6 +404,88 @@ describe('ReplayLabPage', () => {
     expect(lockedSummary).toBeInTheDocument()
     expect(lockedSummary).toHaveTextContent(/implied p\(up\)/i)
     expect(lockedSummary).toHaveTextContent('70.0%')
+  })
+
+  it('records a completed attempt after reveal and does not duplicate it', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ReplayLabPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /your prediction/i })).toBeInTheDocument()
+    })
+
+    expect(screen.getByRole('heading', { name: /your replay performance/i })).toBeInTheDocument()
+    expect(screen.getByText(/no completed forecasts yet/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('radio', { name: /one trading session/i }))
+    await user.click(screen.getByRole('radio', { name: /^up$/i }))
+    fireConfidence(70)
+    await user.click(screen.getByRole('button', { name: /lock prediction/i }))
+    await user.click(screen.getByRole('button', { name: /reveal outcome/i }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/outcome comparison/i)).toBeInTheDocument()
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/completed attempts/i).closest('div')).toHaveTextContent('1')
+    })
+
+    const stored = parseHistory(window.localStorage.getItem(REPLAY_HISTORY_STORAGE_KEY))
+    expect(stored.attempts).toHaveLength(1)
+    expect(stored.attempts[0]).toMatchObject({
+      replayDate: demoReplaySession.selected_date,
+      horizon: 1,
+      userDirection: 'up',
+      userConfidence: 70,
+      userProbUp: 0.7,
+    })
+
+    // Same attempt id (rerender / repeated reveal response) must not double-count.
+    const dup = appendAttempt(stored.attempts[0]!)
+    expect(dup.status).toBe('duplicate')
+    expect(parseHistory(window.localStorage.getItem(REPLAY_HISTORY_STORAGE_KEY)).attempts).toHaveLength(
+      1,
+    )
+  })
+
+  it('clears local history only after an accessible confirmation step', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ReplayLabPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /your prediction/i })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('radio', { name: /five trading sessions/i }))
+    await user.click(screen.getByRole('radio', { name: /^down$/i }))
+    fireConfidence(70)
+    await user.click(screen.getByRole('button', { name: /lock prediction/i }))
+    await user.click(screen.getByRole('button', { name: /reveal outcome/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^clear history$/i })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: /^clear history$/i }))
+    expect(screen.getByRole('status')).toHaveTextContent(/clear all local history/i)
+    expect(
+      screen.getByRole('button', { name: /confirm clear history/i }),
+    ).toBeInTheDocument()
+
+    // First step alone must not wipe storage.
+    expect(parseHistory(window.localStorage.getItem(REPLAY_HISTORY_STORAGE_KEY)).attempts).toHaveLength(
+      1,
+    )
+
+    await user.click(screen.getByRole('button', { name: /confirm clear history/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/no completed forecasts yet/i)).toBeInTheDocument()
+    })
+    expect(parseHistory(window.localStorage.getItem(REPLAY_HISTORY_STORAGE_KEY)).attempts).toHaveLength(
+      0,
+    )
   })
 })
 

@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { FadeContent } from '@/features/ui/components/FadeContent'
 import { GlassCard } from '@/features/ui/components/GlassCard'
 import { ReplayIndicatorsPanel } from '@/features/replay/components/ReplayIndicatorsPanel'
 import { ReplayLockedPrediction } from '@/features/replay/components/ReplayLockedPrediction'
 import { ReplayOutcomeComparison } from '@/features/replay/components/ReplayOutcomeComparison'
+import { ReplayPerformancePanel } from '@/features/replay/components/ReplayPerformancePanel'
 import { ReplayPredictionForm } from '@/features/replay/components/ReplayPredictionForm'
 import { ReplayPriceChart } from '@/features/replay/components/ReplayPriceChart'
 import { ReplaySessionControls } from '@/features/replay/components/ReplaySessionControls'
 import { ReplaySessionSummary } from '@/features/replay/components/ReplaySessionSummary'
 import { ReplayStatusPanel } from '@/features/replay/components/ReplayStatusPanel'
 import { ReplayWorkflowStepper } from '@/features/replay/components/ReplayWorkflowStepper'
+import { buildReplayAttempt } from '@/features/replay/history'
+import { useReplayHistory } from '@/features/replay/hooks/useReplayHistory'
 import { useReplayPrediction } from '@/features/replay/hooks/useReplayPrediction'
 import { useReplayResult } from '@/features/replay/hooks/useReplayResult'
 import { useReplaySession } from '@/features/replay/hooks/useReplaySession'
@@ -34,6 +37,7 @@ export function ReplayLabPage() {
   const {
     phase,
     revealRequested,
+    revealId,
     locked,
     draft,
     controlsFrozen,
@@ -52,6 +56,8 @@ export function ReplayLabPage() {
     markRevealed,
   } = prediction
   const sessionQuery = useReplaySession(request)
+  const { summary, recent, recordAttempt, clear } = useReplayHistory()
+  const recordedRevealIdsRef = useRef(new Set<string>())
 
   const selectedDate = sessionQuery.data?.available
     ? sessionQuery.data.selected_date
@@ -77,6 +83,34 @@ export function ReplayLabPage() {
     markRevealed,
     resultQuery.isSuccess,
     resultQuery.data,
+  ])
+
+  // Persist one completed attempt per reveal session after a successful outcome.
+  useEffect(() => {
+    if (phase !== 'revealed' || !locked || !revealId || !selectedDate) return
+    const result = resultQuery.data
+    if (!result?.available) return
+    const outcome = locked.horizon === 1 ? result.one_day : result.five_day
+    if (!outcome) return
+    if (recordedRevealIdsRef.current.has(revealId)) return
+
+    const attempt = buildReplayAttempt({
+      id: revealId,
+      replayDate: selectedDate,
+      prediction: locked,
+      outcome,
+    })
+    const appendResult = recordAttempt(attempt)
+    if (appendResult.status === 'added' || appendResult.status === 'duplicate') {
+      recordedRevealIdsRef.current.add(revealId)
+    }
+  }, [
+    phase,
+    locked,
+    revealId,
+    selectedDate,
+    resultQuery.data,
+    recordAttempt,
   ])
 
   const serverDate =
@@ -291,6 +325,16 @@ export function ReplayLabPage() {
             ) : null}
           </FadeContent>
         ) : null}
+
+        <FadeContent className="mt-6">
+          <GlassCard className="p-6 sm:p-8">
+            <ReplayPerformancePanel
+              summary={summary}
+              recent={recent}
+              onClear={clear}
+            />
+          </GlassCard>
+        </FadeContent>
       </div>
     </div>
   )
