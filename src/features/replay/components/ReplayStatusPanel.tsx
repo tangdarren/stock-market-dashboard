@@ -66,9 +66,7 @@ export function ReplayStatusPanel({
         <p className="mt-2 text-sm text-slate-300">
           {replayReasonMessage(unavailableReason, unavailableDetail)}
         </p>
-        <p className="mt-3 text-xs text-slate-500">
-          Reason: <span className="text-slate-400">{unavailableReason}</span>
-        </p>
+        <p className="sr-only">Reason code: {unavailableReason}</p>
         <ReplayNearbyDates
           before={nearestBefore ?? null}
           after={nearestAfter ?? null}

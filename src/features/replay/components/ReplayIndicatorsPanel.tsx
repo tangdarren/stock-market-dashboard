@@ -130,16 +130,16 @@ function buildCards(indicators: ReplayIndicators | null): MetricCard[] {
           : '—',
       hint: '×20-day average',
     },
-  ]
-
-  if (indicators.opening_gap_pct != null) {
-    cards.push({
+    {
       label: 'Opening gap',
-      value: formatPercent(indicators.opening_gap_pct * 100, 2),
+      value:
+        indicators.opening_gap_pct != null
+          ? formatPercent(indicators.opening_gap_pct * 100, 2)
+          : '—',
       hint: 'Open vs prior close',
-      tone: gapTone,
-    })
-  }
+      tone: indicators.opening_gap_pct != null ? gapTone : 'neutral',
+    },
+  ]
 
   return cards
 }

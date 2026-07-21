@@ -55,7 +55,24 @@ uvicorn app.main:app --app-dir server --reload --port 8000
 ```
 
 Endpoints (all under `/api/v1`): `health`, `market/spy`, `market/spy/analogues`,
-`forecasts/spy`, `forecasts/history`, `model/metrics`, `news/spy`.
+`forecasts/spy`, `forecasts/history`, `model/metrics`, `news/spy`,
+`replay/spy/session`, `replay/spy/random`, `replay/spy/result`.
+
+## Market Replay Lab API
+
+Offline reconstruction of an eligible historical SPY session for educational
+forecasting practice. Session payloads use local OHLCV plus the training-time
+`walk_forward_predictions.csv` artifact — no live model inference.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/v1/replay/spy/session?date=YYYY-MM-DD` | Pre-reveal historical context for a date (chart series + indicators only). |
+| `GET` | `/api/v1/replay/spy/random` | Same shape as session for a random eligible date. |
+| `GET` | `/api/v1/replay/spy/result?date=YYYY-MM-DD` | Walk-forward forecast probabilities and realized one-/five-session outcomes. |
+
+`session` and `random` contain only pre-reveal historical context. `result`
+contains the historical walk-forward forecast and realized outcomes and should
+be requested only after the learner deliberately reveals.
 
 ## Historical analogues API
 

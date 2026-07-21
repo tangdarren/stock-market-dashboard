@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from 'react'
 import { cn } from '@/lib/utils/cn'
 import { formatProbability } from '@/features/forecast/utils/format'
 import type { ReplayDirection } from '../api/types'
@@ -12,6 +13,12 @@ import {
 
 const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d0c14]'
+
+const HORIZONS = [1, 5] as const
+const DIRECTIONS = [
+  { value: 'up' as const, label: 'Up' },
+  { value: 'down' as const, label: 'Down' },
+]
 
 interface ReplayPredictionFormProps {
   draft: ReplayPredictionDraft
@@ -37,6 +44,23 @@ export function ReplayPredictionForm({
       ? impliedProbUp(draft.direction, draft.confidence)
       : null
 
+  const handleHorizonKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (frozen) return
+    const next = cycleOption(event.key, HORIZONS, draft.horizon)
+    if (next == null) return
+    event.preventDefault()
+    onHorizonChange(next)
+  }
+
+  const handleDirectionKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (frozen) return
+    const values = DIRECTIONS.map((item) => item.value)
+    const next = cycleOption(event.key, values, draft.direction)
+    if (next == null) return
+    event.preventDefault()
+    onDirectionChange(next)
+  }
+
   return (
     <section aria-label="Configure your prediction" className="space-y-6">
       <div>
@@ -51,8 +75,13 @@ export function ReplayPredictionForm({
         <legend className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
           Forecast horizon
         </legend>
-        <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Forecast horizon">
-          {([1, 5] as const).map((horizon) => {
+        <div
+          className="grid gap-2 sm:grid-cols-2"
+          role="radiogroup"
+          aria-label="Forecast horizon"
+          onKeyDown={handleHorizonKeyDown}
+        >
+          {HORIZONS.map((horizon) => {
             const selected = draft.horizon === horizon
             return (
               <button
@@ -60,6 +89,13 @@ export function ReplayPredictionForm({
                 type="button"
                 role="radio"
                 aria-checked={selected}
+                tabIndex={
+                  frozen
+                    ? -1
+                    : selected || (draft.horizon == null && horizon === HORIZONS[0])
+                      ? 0
+                      : -1
+                }
                 disabled={frozen}
                 onClick={() => onHorizonChange(horizon)}
                 className={cn(
@@ -82,11 +118,13 @@ export function ReplayPredictionForm({
         <legend className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
           Direction
         </legend>
-        <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Direction">
-          {([
-            { value: 'up' as const, label: 'Up' },
-            { value: 'down' as const, label: 'Down' },
-          ]).map((option) => {
+        <div
+          className="grid gap-2 sm:grid-cols-2"
+          role="radiogroup"
+          aria-label="Direction"
+          onKeyDown={handleDirectionKeyDown}
+        >
+          {DIRECTIONS.map((option) => {
             const selected = draft.direction === option.value
             return (
               <button
@@ -94,13 +132,25 @@ export function ReplayPredictionForm({
                 type="button"
                 role="radio"
                 aria-checked={selected}
+                tabIndex={
+                  frozen
+                    ? -1
+                    : selected ||
+                        (draft.direction == null && option.value === DIRECTIONS[0].value)
+                      ? 0
+                      : -1
+                }
                 disabled={frozen}
                 onClick={() => onDirectionChange(option.value)}
                 className={cn(
                   'rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors',
                   focusRing,
-                  selected && option.value === 'up' && 'border-[#00FFB2]/45 bg-[#00FFB2]/10 text-[#00FFB2]',
-                  selected && option.value === 'down' && 'border-red-400/45 bg-red-400/10 text-red-300',
+                  selected &&
+                    option.value === 'up' &&
+                    'border-[#00FFB2]/45 bg-[#00FFB2]/10 text-[#00FFB2]',
+                  selected &&
+                    option.value === 'down' &&
+                    'border-red-400/45 bg-red-400/10 text-red-300',
                   !selected &&
                     'border-white/[0.1] bg-white/[0.03] text-slate-200 hover:border-white/[0.2]',
                   frozen && 'cursor-not-allowed',
@@ -173,7 +223,7 @@ export function ReplayPredictionForm({
             Lock prediction
           </button>
           {!canLock ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500" role="status">
               Select a horizon, direction, and confidence to lock.
             </p>
           ) : null}
@@ -181,4 +231,26 @@ export function ReplayPredictionForm({
       ) : null}
     </section>
   )
+}
+
+function cycleOption<T>(
+  key: string,
+  options: readonly T[],
+  current: T | null,
+): T | null {
+  if (options.length === 0) return null
+  const index = current == null ? -1 : options.indexOf(current)
+
+  if (key === 'ArrowRight' || key === 'ArrowDown' || key === ' ') {
+    if (key === ' ' && current != null) return null
+    const nextIndex = index < 0 ? 0 : (index + 1) % options.length
+    return options[nextIndex] ?? null
+  }
+  if (key === 'ArrowLeft' || key === 'ArrowUp') {
+    const nextIndex = index <= 0 ? options.length - 1 : index - 1
+    return options[nextIndex] ?? null
+  }
+  if (key === 'Home') return options[0] ?? null
+  if (key === 'End') return options[options.length - 1] ?? null
+  return null
 }

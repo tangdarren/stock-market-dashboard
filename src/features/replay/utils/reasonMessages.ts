@@ -37,12 +37,24 @@ export function replayReasonMessage(
     case 'outcome_unavailable':
       return 'Known one-session and five-session outcomes are not available for this date.'
     case 'date_out_of_range':
-      return 'This date falls outside the eligible Market Replay range.'
+      return 'This date falls outside the eligible Market Replay Lab range.'
+    case 'not_a_trading_session':
+      return 'SPY did not trade on this date. Choose a nearby eligible session.'
+    case 'date_not_eligible':
+      return 'This date is not eligible for Market Replay Lab. Try a nearby suggestion.'
+    case 'invalid_date':
+      return 'Enter a valid calendar date as YYYY-MM-DD.'
     case 'historical_dataset_missing':
       return 'Local SPY history has not been bootstrapped on the backend yet.'
+    case 'historical_dataset_malformed':
+      return 'Local SPY history could not be read. Re-run the bootstrap script on the backend.'
     case 'walk_forward_artifact_missing':
       return 'Walk-forward prediction artifacts are not available on the backend yet.'
+    case 'walk_forward_artifact_malformed':
+      return 'Walk-forward prediction artifacts could not be read. Retrain models on the backend.'
+    case 'no_eligible_sessions':
+      return 'No eligible Market Replay Lab sessions are available in the local dataset.'
     default:
-      return 'This date cannot be loaded for Market Replay.'
+      return 'This date cannot be loaded for Market Replay Lab.'
   }
 }

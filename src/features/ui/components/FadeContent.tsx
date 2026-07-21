@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { cn } from '@/lib/utils/cn'
 
 interface FadeContentProps {
@@ -10,6 +10,28 @@ interface FadeContentProps {
   direction?: 'up' | 'down' | 'left' | 'right' | 'none'
 }
 
+function subscribeReducedMotion(onChange: () => void) {
+  const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+  media.addEventListener('change', onChange)
+  return () => media.removeEventListener('change', onChange)
+}
+
+function getReducedMotionSnapshot() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function getReducedMotionServerSnapshot() {
+  return false
+}
+
+function usePrefersReducedMotion() {
+  return useSyncExternalStore(
+    subscribeReducedMotion,
+    getReducedMotionSnapshot,
+    getReducedMotionServerSnapshot,
+  )
+}
+
 export function FadeContent({
   children,
   className,
@@ -19,7 +41,9 @@ export function FadeContent({
   direction = 'up',
 }: FadeContentProps) {
   const ref = useRef<HTMLDivElement>(null)
-  const [visible, setVisible] = useState(false)
+  const reduceMotion = usePrefersReducedMotion()
+  const [inView, setInView] = useState(false)
+  const visible = reduceMotion || inView
 
   const translateMap = {
     up: 'translateY(24px)',
@@ -30,13 +54,15 @@ export function FadeContent({
   }
 
   useEffect(() => {
+    if (reduceMotion) return
+
     const el = ref.current
     if (!el) return
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setVisible(true)
+          setInView(true)
           observer.unobserve(el)
         }
       },
@@ -45,18 +71,23 @@ export function FadeContent({
 
     observer.observe(el)
     return () => observer.disconnect()
-  }, [threshold])
+  }, [threshold, reduceMotion])
 
   return (
     <div
       ref={ref}
       className={cn(className)}
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'none' : translateMap[direction],
-        transition: `opacity ${duration}ms ease, transform ${duration}ms ease`,
-        transitionDelay: `${delay}ms`,
-      }}
+      data-reduced-motion={reduceMotion ? 'true' : 'false'}
+      style={
+        reduceMotion
+          ? { opacity: 1, transform: 'none' }
+          : {
+              opacity: visible ? 1 : 0,
+              transform: visible ? 'none' : translateMap[direction],
+              transition: `opacity ${duration}ms ease, transform ${duration}ms ease`,
+              transitionDelay: `${delay}ms`,
+            }
+      }
     >
       {children}
     </div>

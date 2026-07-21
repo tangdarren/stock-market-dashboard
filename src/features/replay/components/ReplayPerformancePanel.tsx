@@ -29,6 +29,17 @@ export function ReplayPerformancePanel({
     }
   }, [confirmingClear])
 
+  useEffect(() => {
+    if (!confirmingClear) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setConfirmingClear(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [confirmingClear])
+
   const handleClearClick = () => {
     if (!confirmingClear) {
       setConfirmingClear(true)

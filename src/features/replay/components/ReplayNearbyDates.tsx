@@ -24,7 +24,7 @@ export function ReplayNearbyDates({
             type="button"
             disabled={disabled}
             onClick={() => onSelect(before)}
-            className="rounded-lg border border-white/[0.1] bg-white/[0.03] px-3 py-1.5 text-sm text-slate-200 transition-colors hover:border-[#00FFB2]/30 hover:text-[#00FFB2] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg border border-white/[0.1] bg-white/[0.03] px-3 py-1.5 text-sm text-slate-200 transition-colors hover:border-[#00FFB2]/30 hover:text-[#00FFB2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Before: {before}
           </button>
@@ -34,7 +34,7 @@ export function ReplayNearbyDates({
             type="button"
             disabled={disabled}
             onClick={() => onSelect(after)}
-            className="rounded-lg border border-white/[0.1] bg-white/[0.03] px-3 py-1.5 text-sm text-slate-200 transition-colors hover:border-[#00FFB2]/30 hover:text-[#00FFB2] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg border border-white/[0.1] bg-white/[0.03] px-3 py-1.5 text-sm text-slate-200 transition-colors hover:border-[#00FFB2]/30 hover:text-[#00FFB2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60 disabled:cursor-not-allowed disabled:opacity-50"
           >
             After: {after}
           </button>

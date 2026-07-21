@@ -72,7 +72,7 @@ export const demoReplaySession: ReplaySessionResponse = {
     feature_engineering: 'build_features',
   },
   disclaimer:
-    'Market Replay is an educational reconstruction of a historical session. Past outcomes do not imply future results.',
+    'Market Replay is an educational reconstruction of a historical session. Walk-forward probabilities are out-of-sample evaluation outputs from training time, not live trading signals. Past outcomes do not imply future results.',
   generated_at: `Sample — ${DEMO_REPLAY_DATE}T20:15:00Z`,
 }
 
@@ -104,7 +104,7 @@ export const demoReplayResult: ReplayResultResponse = {
   evaluation_note:
     'This forecast came from out-of-sample walk-forward evaluation during model training, not from a retrospective run of the final trained model.',
   disclaimer:
-    'Market Replay is an educational reconstruction of a historical session. Past outcomes do not imply future results.',
+    'Market Replay is an educational reconstruction of a historical session. Walk-forward probabilities are out-of-sample evaluation outputs from training time, not live trading signals. Past outcomes do not imply future results.',
   mode: 'historical',
   model_version: 'demo',
   model_metadata: {
@@ -114,10 +114,6 @@ export const demoReplayResult: ReplayResultResponse = {
     model_name_5d: 'logistic_regression',
     evaluation: 'chronological_holdout_walk_forward',
   },
-  min_eligible_date: '2023-05-01',
-  max_eligible_date: DEMO_REPLAY_DATE,
-  nearest_eligible_before: DEMO_PREV,
-  nearest_eligible_after: null,
   generated_at: `Sample — ${DEMO_REPLAY_DATE}T20:15:00Z`,
 }
 

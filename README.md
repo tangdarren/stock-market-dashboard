@@ -27,6 +27,21 @@ to be honest about the limits of forecasting equity direction.
 - **Live Alpha Vantage snapshot.** Cached, rate-limited, key-hidden.
 - **Backend-only secrets.** The Alpha Vantage API key lives on the server, and
   the frontend never sees it.
+- **Market Replay Lab.** Revisit an eligible historical SPY session, make a
+  directional forecast using only information available at the time, and
+  compare it with the model’s out-of-sample walk-forward prediction and the
+  realized outcome.
+
+## Market Replay Lab
+
+Open `/replay` to select an eligible historical SPY session or generate one
+randomly. Review market conditions available through that date, choose a
+one-session or five-session direction and confidence, lock the prediction, and
+reveal the model’s walk-forward forecast and actual outcome.
+
+Replay accuracy, calibration, streaks, and recent attempts are stored locally
+in the browser. The feature uses the project’s existing historical data and
+trained artifacts, so no additional external service is required.
 
 ## Market page — section order
 

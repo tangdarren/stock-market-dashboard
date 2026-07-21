@@ -22,7 +22,7 @@ import { BackendUnavailableError } from '@/lib/api/client'
 import { usePageTitle } from '@/hooks/usePageTitle'
 
 export function ReplayLabPage() {
-  usePageTitle('Replay Lab')
+  usePageTitle('Market Replay Lab')
 
   // Load a random eligible session on first open.
   const [request, setRequest] = useState<ReplaySessionRequest>({
@@ -190,9 +190,9 @@ export function ReplayLabPage() {
             Market Replay Lab
           </h1>
           <p className="mt-4 max-w-2xl text-base text-slate-400">
-            Review a historical SPY session, lock your own forecast, then reveal the
-            walk-forward model call and realized outcome. Chart points and indicators
-            stop on the selected date — results stay hidden until you ask for them.
+            Review a historical SPY session using only information available through that
+            date, lock a directional forecast, then reveal the model’s out-of-sample
+            walk-forward prediction and the realized outcome.
           </p>
         </FadeContent>
 

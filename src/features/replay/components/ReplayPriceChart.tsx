@@ -12,8 +12,9 @@ import {
 } from 'recharts'
 
 import { GlassCard } from '@/features/ui/components/GlassCard'
-import { formatDate, formatPrice } from '@/features/forecast/utils/format'
+import { formatPrice } from '@/features/forecast/utils/format'
 import type { ReplayChartBar } from '../api/types'
+import { formatReplayCalendarDate } from '../utils/formatReplayDate'
 
 interface ReplayPriceChartProps {
   series: ReplayChartBar[]
@@ -125,7 +126,7 @@ export function ReplayPriceChart({ series, selectedDate }: ReplayPriceChartProps
                 color: '#f8fafc',
                 fontSize: 12,
               }}
-              labelFormatter={(label: string) => formatDate(label)}
+              labelFormatter={(label: string) => formatReplayCalendarDate(label)}
               formatter={(value: number | string, _name: string, item) => {
                 const point = item?.payload as ChartPoint | undefined
                 const prefix = point?.isSelected ? 'Selected close' : 'Close'
