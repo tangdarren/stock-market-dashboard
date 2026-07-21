@@ -8,6 +8,10 @@ import {
   demoMetrics,
   demoNews,
 } from '@/features/forecast/demo/demoResponses'
+import {
+  demoReplayResult,
+  demoReplaySession,
+} from '@/features/replay/demo/demoResponses'
 
 const base = `${ENV.API_BASE_URL}${ENV.API_PREFIX}`
 
@@ -36,6 +40,9 @@ export const successHandlers = [
   http.get(`${base}/market/spy/analogues`, () =>
     HttpResponse.json({ ...demoAnalogues, mode: 'live', cache_status: 'miss' }),
   ),
+  http.get(`${base}/replay/spy/session`, () => HttpResponse.json(demoReplaySession)),
+  http.get(`${base}/replay/spy/random`, () => HttpResponse.json(demoReplaySession)),
+  http.get(`${base}/replay/spy/result`, () => HttpResponse.json(demoReplayResult)),
 ]
 
 export const modelUnavailableHandlers = [
@@ -101,6 +108,41 @@ export const modelUnavailableHandlers = [
       detail: 'Historical dataset is not present.',
     }),
   ),
+  http.get(`${base}/replay/spy/session`, () =>
+    HttpResponse.json({
+      ...demoReplaySession,
+      available: false,
+      mode: 'unavailable',
+      series: [],
+      session_count: 0,
+      indicators: null,
+      reason: 'historical_dataset_missing',
+      detail: 'Historical dataset is not present.',
+    }),
+  ),
+  http.get(`${base}/replay/spy/random`, () =>
+    HttpResponse.json({
+      ...demoReplaySession,
+      available: false,
+      mode: 'unavailable',
+      series: [],
+      session_count: 0,
+      indicators: null,
+      reason: 'historical_dataset_missing',
+      detail: 'Historical dataset is not present.',
+    }),
+  ),
+  http.get(`${base}/replay/spy/result`, () =>
+    HttpResponse.json({
+      ...demoReplayResult,
+      available: false,
+      mode: 'unavailable',
+      one_day: null,
+      five_day: null,
+      reason: 'walk_forward_artifact_missing',
+      detail: 'Walk-forward predictions artifact is not present.',
+    }),
+  ),
 ]
 
 export const backendDownHandlers = [
@@ -111,6 +153,9 @@ export const backendDownHandlers = [
   http.get(`${base}/model/metrics`, () => HttpResponse.error()),
   http.get(`${base}/news/spy`, () => HttpResponse.error()),
   http.get(`${base}/market/spy/analogues`, () => HttpResponse.error()),
+  http.get(`${base}/replay/spy/session`, () => HttpResponse.error()),
+  http.get(`${base}/replay/spy/random`, () => HttpResponse.error()),
+  http.get(`${base}/replay/spy/result`, () => HttpResponse.error()),
 ]
 
 export const staleHandlers = [
@@ -143,6 +188,9 @@ export const staleHandlers = [
   http.get(`${base}/market/spy/analogues`, () =>
     HttpResponse.json({ ...demoAnalogues, mode: 'stale', cache_status: 'hit' }),
   ),
+  http.get(`${base}/replay/spy/session`, () => HttpResponse.json(demoReplaySession)),
+  http.get(`${base}/replay/spy/random`, () => HttpResponse.json(demoReplaySession)),
+  http.get(`${base}/replay/spy/result`, () => HttpResponse.json(demoReplayResult)),
 ]
 
 // Default = success.
