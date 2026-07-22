@@ -229,3 +229,68 @@ class ReplayResultResponse(BaseModel):
     generated_at: str
     reason: str | None = None
     detail: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Model Health / Drift Center
+# ---------------------------------------------------------------------------
+
+
+class RollingMetricDeltas(BaseModel):
+    """Differences from the corresponding holdout baseline in metrics.json."""
+
+    accuracy: float | None = None
+    brier: float | None = None
+    ece: float | None = None
+    average_predicted_confidence: float | None = None
+    actual_accuracy: float | None = None
+
+
+class RollingWindowPoint(BaseModel):
+    """One completed rolling window observation for charting."""
+
+    n_observations: int
+    start_date: str
+    end_date: str
+    accuracy: float
+    brier: float
+    ece: float | None = None
+    average_predicted_confidence: float | None = None
+    actual_accuracy: float
+    vs_baseline: RollingMetricDeltas
+
+
+class HoldoutBaselineSummary(BaseModel):
+    accuracy: float | None = None
+    brier: float | None = None
+    ece: float | None = None
+    average_predicted_confidence: float | None = None
+    actual_accuracy: float | None = None
+    n_observations: int | None = None
+    test_period_start: str | None = None
+    test_period_end: str | None = None
+
+
+class RollingWindowResult(BaseModel):
+    horizon_days: int
+    window: int
+    sufficient: bool
+    n_available: int
+    series: list[RollingWindowPoint]
+    latest: RollingWindowPoint | None = None
+
+
+class HorizonRollingPerformance(BaseModel):
+    baseline: HoldoutBaselineSummary | None = None
+    windows: dict[str, RollingWindowResult]
+
+
+class RollingModelPerformanceResponse(BaseModel):
+    """Chronological rolling performance plus latest-window summaries."""
+
+    available: bool
+    windows: list[int]
+    horizons: dict[str, HorizonRollingPerformance]
+    baseline_available: bool = False
+    reason: str | None = None
+    detail: str | None = None

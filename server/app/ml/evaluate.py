@@ -144,3 +144,36 @@ def calibration_curve_points(
             }
         )
     return rows
+
+
+def expected_calibration_error(
+    y_true: np.ndarray, prob_up: np.ndarray, *, bins: int = 10
+) -> float | None:
+    """Weighted mean absolute gap between predicted and empirical bin probabilities.
+
+    Empty bins contribute nothing. Returns ``None`` when there are no observations
+    or every bin is empty after filtering.
+    """
+    y_true = np.asarray(y_true).astype(int)
+    prob_up = np.asarray(prob_up).astype(float)
+    n = int(len(y_true))
+    if n == 0:
+        return None
+    points = calibration_curve_points(y_true, prob_up, bins=bins)
+    if not points:
+        return None
+    return float(
+        sum(
+            (point["n"] / n) * abs(point["predicted_prob"] - point["empirical_prob"])
+            for point in points
+        )
+    )
+
+
+def average_predicted_confidence(prob_up: np.ndarray) -> float | None:
+    """Mean of ``max(p, 1-p)`` — the model's stated confidence in its call."""
+    prob_up = np.asarray(prob_up).astype(float)
+    if len(prob_up) == 0:
+        return None
+    confidence = np.where(prob_up >= 0.5, prob_up, 1.0 - prob_up)
+    return float(confidence.mean())

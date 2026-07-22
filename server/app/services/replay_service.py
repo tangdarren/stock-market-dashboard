@@ -36,7 +36,6 @@ from app.ml.replay import (
     REPLAY_EVALUATION_NOTE,
     REPLAY_METHODOLOGY,
     SUPPORTED_HORIZONS,
-    WALK_FORWARD_REQUIRED_COLUMNS,
     ReplayBundle,
     ReplayResult,
     ReplaySnapshot,
@@ -360,22 +359,13 @@ def _load_walk_forward() -> pd.DataFrame:
             reason="walk_forward_artifact_malformed",
         ) from exc
 
-    missing = set(WALK_FORWARD_REQUIRED_COLUMNS) - set(raw.columns)
-    if missing:
-        raise _ReplayUnavailable(
-            f"Walk-forward predictions artifact missing columns: {sorted(missing)}",
-            reason="walk_forward_artifact_malformed",
-        )
-
-    frame = raw.loc[:, list(WALK_FORWARD_REQUIRED_COLUMNS)].copy()
-    frame["date"] = pd.to_datetime(frame["date"]).dt.normalize()
     try:
-        frame["horizon_days"] = frame["horizon_days"].astype(int)
-        frame["prob_up"] = frame["prob_up"].astype(float)
-        frame["realized_return"] = frame["realized_return"].astype(float)
-    except (TypeError, ValueError) as exc:
+        from app.ml.replay import prepare_walk_forward_frame
+
+        frame = prepare_walk_forward_frame(raw)
+    except ValueError as exc:
         raise _ReplayUnavailable(
-            f"Walk-forward predictions artifact has invalid numeric columns: {exc}",
+            f"Walk-forward predictions artifact is malformed: {exc}",
             reason="walk_forward_artifact_malformed",
         ) from exc
 

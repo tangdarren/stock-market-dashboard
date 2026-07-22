@@ -388,16 +388,32 @@ def _prepare_ohlcv(ohlcv: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _validate_walk_forward(walk_forward: pd.DataFrame) -> pd.DataFrame:
+def prepare_walk_forward_frame(walk_forward: pd.DataFrame) -> pd.DataFrame:
+    """Validate required columns and normalize types for walk-forward rows.
+
+    Raises :class:`ValueError` when columns are missing or numeric fields cannot
+    be coerced. Shared by replay and model-health monitoring.
+    """
     missing = set(WALK_FORWARD_REQUIRED_COLUMNS) - set(walk_forward.columns)
     if missing:
         raise ValueError(
             f"Walk-forward artifact missing required columns: {sorted(missing)}"
         )
     out = walk_forward.loc[:, list(WALK_FORWARD_REQUIRED_COLUMNS)].copy()
-    out["date"] = pd.to_datetime(out["date"]).dt.normalize()
-    out["horizon_days"] = out["horizon_days"].astype(int)
+    try:
+        out["date"] = pd.to_datetime(out["date"]).dt.normalize()
+        out["horizon_days"] = out["horizon_days"].astype(int)
+        out["prob_up"] = out["prob_up"].astype(float)
+        out["realized_return"] = out["realized_return"].astype(float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Walk-forward artifact has invalid columns: {exc}"
+        ) from exc
     return out
+
+
+def _validate_walk_forward(walk_forward: pd.DataFrame) -> pd.DataFrame:
+    return prepare_walk_forward_frame(walk_forward)
 
 
 def _outcome_row_complete(row: Any) -> bool:
@@ -413,6 +429,15 @@ def _outcome_row_complete(row: Any) -> bool:
     return not (
         actual is None or predicted is None or pd.isna(actual) or pd.isna(predicted)
     )
+
+
+def complete_walk_forward_rows(walk_forward: pd.DataFrame) -> pd.DataFrame:
+    """Return rows with finite probabilities/returns and non-null labels."""
+    frame = prepare_walk_forward_frame(walk_forward)
+    if frame.empty:
+        return frame
+    mask = [_outcome_row_complete(row) for row in frame.itertuples(index=False)]
+    return frame.loc[mask].reset_index(drop=True)
 
 
 def _horizon_outcome(row: Any) -> HorizonOutcome:
