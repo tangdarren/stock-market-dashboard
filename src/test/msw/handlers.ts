@@ -9,11 +9,24 @@ import {
   demoNews,
 } from '@/features/forecast/demo/demoResponses'
 import {
+  demoModelMonitoring,
+  demoModelMonitoringUnavailable,
+} from '@/features/model-monitor/demo/demoResponses'
+import {
   demoReplayResult,
   demoReplaySession,
 } from '@/features/replay/demo/demoResponses'
 
 const base = `${ENV.API_BASE_URL}${ENV.API_PREFIX}`
+
+function monitoringFromUrl(url: string) {
+  const parsed = new URL(url)
+  const horizon = parsed.searchParams.get('horizon') === '5d' ? '5d' : '1d'
+  const rawWindow = Number(parsed.searchParams.get('window') ?? 30)
+  const window =
+    rawWindow === 60 || rawWindow === 120 || rawWindow === 252 ? rawWindow : 30
+  return demoModelMonitoring(horizon, window)
+}
 
 export const successHandlers = [
   http.get(`${base}/health`, () =>
@@ -36,6 +49,9 @@ export const successHandlers = [
   ),
   http.get(`${base}/forecasts/history`, () => HttpResponse.json(demoHistory)),
   http.get(`${base}/model/metrics`, () => HttpResponse.json(demoMetrics)),
+  http.get(`${base}/model/monitoring`, ({ request }) =>
+    HttpResponse.json(monitoringFromUrl(request.url)),
+  ),
   http.get(`${base}/news/spy`, () => HttpResponse.json(demoNews)),
   http.get(`${base}/market/spy/analogues`, () =>
     HttpResponse.json({ ...demoAnalogues, mode: 'live', cache_status: 'miss' }),
@@ -82,6 +98,9 @@ export const modelUnavailableHandlers = [
       { detail: { message: 'no artifacts', reason: 'artifacts_missing' } },
       { status: 503 },
     ),
+  ),
+  http.get(`${base}/model/monitoring`, () =>
+    HttpResponse.json(demoModelMonitoringUnavailable),
   ),
   http.get(`${base}/news/spy`, () =>
     HttpResponse.json({ available: false, reason: 'no key', note: 'contextual' }),
@@ -151,6 +170,7 @@ export const backendDownHandlers = [
   http.get(`${base}/forecasts/spy`, () => HttpResponse.error()),
   http.get(`${base}/forecasts/history`, () => HttpResponse.error()),
   http.get(`${base}/model/metrics`, () => HttpResponse.error()),
+  http.get(`${base}/model/monitoring`, () => HttpResponse.error()),
   http.get(`${base}/news/spy`, () => HttpResponse.error()),
   http.get(`${base}/market/spy/analogues`, () => HttpResponse.error()),
   http.get(`${base}/replay/spy/session`, () => HttpResponse.error()),
@@ -184,6 +204,9 @@ export const staleHandlers = [
   ),
   http.get(`${base}/forecasts/history`, () => HttpResponse.json(demoHistory)),
   http.get(`${base}/model/metrics`, () => HttpResponse.json(demoMetrics)),
+  http.get(`${base}/model/monitoring`, ({ request }) =>
+    HttpResponse.json(monitoringFromUrl(request.url)),
+  ),
   http.get(`${base}/news/spy`, () => HttpResponse.json(demoNews)),
   http.get(`${base}/market/spy/analogues`, () =>
     HttpResponse.json({ ...demoAnalogues, mode: 'stale', cache_status: 'hit' }),

@@ -8,6 +8,7 @@ const navLinks = [
   { label: 'Home', href: ROUTES.HOME },
   { label: 'Market', href: ROUTES.DAILY },
   { label: 'Replay Lab', href: ROUTES.REPLAY },
+  { label: 'Model Monitor', href: ROUTES.MONITOR },
   { label: 'Learn', href: ROUTES.LEARN },
   { label: 'About', href: ROUTES.ABOUT },
 ]
