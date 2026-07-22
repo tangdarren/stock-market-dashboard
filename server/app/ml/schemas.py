@@ -349,3 +349,76 @@ class FeatureDriftResponse(BaseModel):
     psi_thresholds: dict[str, float]
     reason: str | None = None
     detail: str | None = None
+
+
+class MonitoringStatusReason(BaseModel):
+    """Machine-readable explanation for the overall health band."""
+
+    source: str
+    code: str
+    status: Literal["stable", "watch", "drift_detected", "insufficient_data"] | None = None
+    feature: str | None = None
+    metric: str | None = None
+    value: float | None = None
+    threshold_watch: float | None = None
+    threshold_drift: float | None = None
+    detail: str
+
+
+class ConfidenceVersusAccuracy(BaseModel):
+    average_predicted_confidence: float
+    actual_accuracy: float
+    gap: float
+    status: Literal["stable", "watch", "drift_detected", "insufficient_data"]
+
+
+class MonitoringFeatureDriftBlock(BaseModel):
+    ranked: list[FeatureDriftScore]
+    status_counts: FeatureDriftStatusCounts
+    start_date: str | None = None
+    end_date: str | None = None
+    train_start: str | None = None
+    train_end: str | None = None
+    feature_schema_fingerprint: str | None = None
+
+
+class MonitoringObservationCounts(BaseModel):
+    rolling_window: int
+    rolling_available: int
+    rolling_scored: int
+    feature_available: int
+    feature_scored: int
+    baseline: int | None = None
+
+
+class MonitoringTimestamps(BaseModel):
+    generated_at: str
+    metrics_generated_at: str | None = None
+    monitoring_reference_generated_at: str | None = None
+    rolling_start_date: str | None = None
+    rolling_end_date: str | None = None
+    feature_window_start: str | None = None
+    feature_window_end: str | None = None
+
+
+class ModelMonitoringResponse(BaseModel):
+    """Combined Model Health and Drift Center payload for one horizon/window."""
+
+    available: bool
+    status: Literal["stable", "watch", "drift_detected"] | None = None
+    status_explanation: str
+    status_reasons: list[MonitoringStatusReason] = Field(default_factory=list)
+    horizon: Literal["1d", "5d"]
+    horizon_days: int
+    window: int
+    latest_performance: RollingWindowPoint | None = None
+    baseline: HoldoutBaselineSummary | None = None
+    rolling_series: list[RollingWindowPoint] = Field(default_factory=list)
+    confidence_vs_accuracy: ConfidenceVersusAccuracy | None = None
+    feature_drift: MonitoringFeatureDriftBlock | None = None
+    observation_counts: MonitoringObservationCounts
+    timestamps: MonitoringTimestamps
+    model_version: str | None = None
+    thresholds: dict[str, dict[str, float]]
+    reason: str | None = None
+    detail: str | None = None

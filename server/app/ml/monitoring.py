@@ -55,6 +55,35 @@ PSI_THRESHOLDS: dict[str, float] = {
     "watch_max": PSI_WATCH_MAX,
 }
 
+# Performance health bands versus the original holdout baseline / calibration gap.
+ACCURACY_DROP_WATCH = 0.05
+ACCURACY_DROP_DRIFT = 0.10
+BRIER_RISE_WATCH = 0.02
+BRIER_RISE_DRIFT = 0.05
+CONFIDENCE_GAP_WATCH = 0.05
+CONFIDENCE_GAP_DRIFT = 0.10
+
+PERFORMANCE_THRESHOLDS: dict[str, float] = {
+    "accuracy_drop_watch": ACCURACY_DROP_WATCH,
+    "accuracy_drop_drift": ACCURACY_DROP_DRIFT,
+    "brier_rise_watch": BRIER_RISE_WATCH,
+    "brier_rise_drift": BRIER_RISE_DRIFT,
+    "confidence_gap_watch": CONFIDENCE_GAP_WATCH,
+    "confidence_gap_drift": CONFIDENCE_GAP_DRIFT,
+}
+
+MONITORING_THRESHOLDS: dict[str, dict[str, float]] = {
+    "psi": dict(PSI_THRESHOLDS),
+    "performance": dict(PERFORMANCE_THRESHOLDS),
+}
+
+_STATUS_SEVERITY: dict[str, int] = {
+    "insufficient_data": 0,
+    "stable": 1,
+    "watch": 2,
+    "drift_detected": 3,
+}
+
 
 class MonitoringError(RuntimeError):
     """Structured failure when monitoring artifacts cannot be used."""
@@ -344,6 +373,240 @@ def classify_psi(psi: float | None) -> DriftStatus:
     if psi < PSI_WATCH_MAX:
         return "watch"
     return "drift_detected"
+
+
+def classify_higher_is_worse(
+    value: float | None,
+    *,
+    watch_threshold: float,
+    drift_threshold: float,
+) -> DriftStatus:
+    """Classify a non-negative degradation score (drop, rise, or gap)."""
+    if value is None or not np.isfinite(value):
+        return "insufficient_data"
+    if value < watch_threshold:
+        return "stable"
+    if value < drift_threshold:
+        return "watch"
+    return "drift_detected"
+
+
+def worse_status(left: DriftStatus, right: DriftStatus) -> DriftStatus:
+    """Return the more severe of two statuses."""
+    if _STATUS_SEVERITY[left] >= _STATUS_SEVERITY[right]:
+        return left
+    return right
+
+
+def rank_feature_drift(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Sort feature-drift rows by severity, then PSI descending."""
+
+    def _key(row: dict[str, Any]) -> tuple[int, float]:
+        status = str(row.get("status") or "insufficient_data")
+        psi = row.get("psi")
+        psi_f = float(psi) if isinstance(psi, (int, float)) and np.isfinite(psi) else -1.0
+        return (_STATUS_SEVERITY.get(status, 0), psi_f)
+
+    return sorted(features, key=_key, reverse=True)
+
+
+def performance_health_signals(latest: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Machine-readable performance signals from the latest rolling window."""
+    if not latest:
+        return []
+
+    signals: list[dict[str, Any]] = []
+    vs_baseline = latest.get("vs_baseline") or {}
+
+    accuracy = latest.get("accuracy")
+    baseline_accuracy = None
+    accuracy_delta = vs_baseline.get("accuracy")
+    if accuracy_delta is not None:
+        # Positive delta means rolling beat baseline; degradation is the drop.
+        accuracy_drop = float(max(0.0, -float(accuracy_delta)))
+        baseline_accuracy = (
+            float(accuracy) - float(accuracy_delta) if accuracy is not None else None
+        )
+        status = classify_higher_is_worse(
+            accuracy_drop,
+            watch_threshold=ACCURACY_DROP_WATCH,
+            drift_threshold=ACCURACY_DROP_DRIFT,
+        )
+        signals.append(
+            {
+                "source": "performance",
+                "code": "accuracy_drop_vs_baseline",
+                "status": status,
+                "metric": "accuracy_drop",
+                "value": accuracy_drop,
+                "threshold_watch": ACCURACY_DROP_WATCH,
+                "threshold_drift": ACCURACY_DROP_DRIFT,
+                "detail": (
+                    f"Rolling accuracy drop versus holdout baseline is {accuracy_drop:.3f} "
+                    f"(rolling={accuracy}, baseline={baseline_accuracy})."
+                ),
+            }
+        )
+
+    brier = latest.get("brier")
+    brier_delta = vs_baseline.get("brier")
+    if brier_delta is not None:
+        brier_rise = float(max(0.0, float(brier_delta)))
+        baseline_brier = float(brier) - float(brier_delta) if brier is not None else None
+        status = classify_higher_is_worse(
+            brier_rise,
+            watch_threshold=BRIER_RISE_WATCH,
+            drift_threshold=BRIER_RISE_DRIFT,
+        )
+        signals.append(
+            {
+                "source": "performance",
+                "code": "brier_rise_vs_baseline",
+                "status": status,
+                "metric": "brier_rise",
+                "value": brier_rise,
+                "threshold_watch": BRIER_RISE_WATCH,
+                "threshold_drift": BRIER_RISE_DRIFT,
+                "detail": (
+                    f"Rolling Brier rise versus holdout baseline is {brier_rise:.3f} "
+                    f"(rolling={brier}, baseline={baseline_brier})."
+                ),
+            }
+        )
+
+    avg_conf = latest.get("average_predicted_confidence")
+    actual_acc = latest.get("actual_accuracy")
+    if avg_conf is not None and actual_acc is not None:
+        gap = float(avg_conf) - float(actual_acc)
+        overconfidence = float(max(0.0, gap))
+        status = classify_higher_is_worse(
+            overconfidence,
+            watch_threshold=CONFIDENCE_GAP_WATCH,
+            drift_threshold=CONFIDENCE_GAP_DRIFT,
+        )
+        signals.append(
+            {
+                "source": "performance",
+                "code": "confidence_vs_actual_accuracy",
+                "status": status,
+                "metric": "confidence_gap",
+                "value": gap,
+                "threshold_watch": CONFIDENCE_GAP_WATCH,
+                "threshold_drift": CONFIDENCE_GAP_DRIFT,
+                "detail": (
+                    f"Average predicted confidence ({float(avg_conf):.3f}) versus "
+                    f"actual accuracy ({float(actual_acc):.3f}); gap={gap:.3f}."
+                ),
+            }
+        )
+
+    return signals
+
+
+def feature_drift_health_signals(
+    feature_scores: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Promote meaningful feature-drift rows into overall health signals."""
+    signals: list[dict[str, Any]] = []
+    for row in feature_scores:
+        status = str(row.get("status") or "insufficient_data")
+        if status == "insufficient_data":
+            continue
+        if status == "stable":
+            continue
+        signals.append(
+            {
+                "source": "feature_drift",
+                "code": f"psi_{status}",
+                "status": status,
+                "feature": row.get("feature"),
+                "metric": "psi",
+                "value": row.get("psi"),
+                "threshold_watch": PSI_STABLE_MAX,
+                "threshold_drift": PSI_WATCH_MAX,
+                "detail": row.get("explanation") or f"{row.get('feature')} PSI status={status}.",
+            }
+        )
+    return signals
+
+
+def derive_overall_health(
+    signals: list[dict[str, Any]],
+) -> tuple[DriftStatus, list[dict[str, Any]], str]:
+    """Pick the worst meaningful signal and build a short explanation."""
+    meaningful = [
+        s for s in signals if str(s.get("status")) in {"stable", "watch", "drift_detected"}
+    ]
+    if not meaningful:
+        return (
+            "insufficient_data",
+            [],
+            "Not enough complete monitoring observations to classify model health.",
+        )
+
+    overall: DriftStatus = "stable"
+    for signal in meaningful:
+        overall = worse_status(overall, signal["status"])  # type: ignore[arg-type]
+
+    drivers = [s for s in meaningful if s.get("status") == overall]
+    # Keep stable drivers out of the reason list when overall is stable; still
+    # surface the top performance/drift cues that explain the band.
+    if overall == "stable":
+        reasons = [
+            {
+                "source": "aggregate",
+                "code": "all_signals_stable",
+                "status": "stable",
+                "detail": (
+                    "No performance degradation or feature-drift signal exceeded "
+                    f"the watch thresholds (PSI<{PSI_STABLE_MAX:.2f}, "
+                    f"accuracy drop<{ACCURACY_DROP_WATCH:.2f}, "
+                    f"Brier rise<{BRIER_RISE_WATCH:.2f}, "
+                    f"confidence gap<{CONFIDENCE_GAP_WATCH:.2f})."
+                ),
+            }
+        ]
+        explanation = (
+            "Model health looks stable for the selected horizon and window: "
+            "rolling performance and feature distributions stay within watch thresholds."
+        )
+        return overall, reasons, explanation
+
+    reasons = drivers
+    lead = drivers[0]
+    source = lead.get("source")
+    if overall == "watch":
+        explanation = (
+            f"Model health is on watch because {source} signal "
+            f"`{lead.get('code')}` reached the watch band."
+        )
+    else:
+        explanation = (
+            f"Model health is drift_detected because {source} signal "
+            f"`{lead.get('code')}` reached or exceeded the drift threshold."
+        )
+    return overall, reasons, explanation
+
+
+def confidence_vs_accuracy_summary(latest: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not latest:
+        return None
+    avg_conf = latest.get("average_predicted_confidence")
+    actual_acc = latest.get("actual_accuracy")
+    if avg_conf is None or actual_acc is None:
+        return None
+    gap = float(avg_conf) - float(actual_acc)
+    status = classify_higher_is_worse(
+        float(max(0.0, gap)),
+        watch_threshold=CONFIDENCE_GAP_WATCH,
+        drift_threshold=CONFIDENCE_GAP_DRIFT,
+    )
+    return {
+        "average_predicted_confidence": float(avg_conf),
+        "actual_accuracy": float(actual_acc),
+        "gap": gap,
+        "status": status,
+    }
 
 
 def population_stability_index(
@@ -874,13 +1137,21 @@ def get_feature_drift(
 
 
 __all__ = [
+    "ACCURACY_DROP_DRIFT",
+    "ACCURACY_DROP_WATCH",
     "BASELINE_METRIC_KEYS",
+    "BRIER_RISE_DRIFT",
+    "BRIER_RISE_WATCH",
     "CALIBRATION_BINS",
+    "CONFIDENCE_GAP_DRIFT",
+    "CONFIDENCE_GAP_WATCH",
     "DEFAULT_PSI_BINS",
     "DEFAULT_WINDOWS",
     "METRICS_FILENAME",
     "MONITORING_REFERENCE_FILENAME",
+    "MONITORING_THRESHOLDS",
     "MonitoringError",
+    "PERFORMANCE_THRESHOLDS",
     "PSI_EPSILON",
     "PSI_STABLE_MAX",
     "PSI_THRESHOLDS",
@@ -889,18 +1160,25 @@ __all__ = [
     "assemble_monitoring_reference",
     "build_feature_reference",
     "build_horizon_feature_reference",
+    "classify_higher_is_worse",
     "classify_psi",
     "compute_feature_drift",
     "compute_rolling_model_performance",
+    "confidence_vs_accuracy_summary",
+    "derive_overall_health",
     "extract_holdout_baseline",
+    "feature_drift_health_signals",
     "get_feature_drift",
     "get_rolling_model_performance",
     "load_metrics_baseline",
     "load_monitoring_reference",
     "load_recent_engineered_features",
     "load_walk_forward_predictions",
+    "performance_health_signals",
     "population_stability_index",
+    "rank_feature_drift",
     "rolling_performance_for_horizon",
     "score_feature_drift",
+    "worse_status",
     "window_performance_metrics",
 ]
