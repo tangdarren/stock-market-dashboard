@@ -294,3 +294,58 @@ class RollingModelPerformanceResponse(BaseModel):
     baseline_available: bool = False
     reason: str | None = None
     detail: str | None = None
+
+
+class FeatureDriftStats(BaseModel):
+    mean: float | None = None
+    std: float | None = None
+    n_valid: int | None = None
+
+
+class FeatureDriftScore(BaseModel):
+    feature: str
+    psi: float | None = None
+    status: Literal["stable", "watch", "drift_detected", "insufficient_data"]
+    recent: FeatureDriftStats
+    reference: FeatureDriftStats
+    explanation: str
+
+
+class FeatureDriftStatusCounts(BaseModel):
+    stable: int = 0
+    watch: int = 0
+    drift_detected: int = 0
+    insufficient_data: int = 0
+
+
+class FeatureDriftWindowResult(BaseModel):
+    window: int
+    sufficient: bool
+    n_available: int
+    n_scored: int
+    start_date: str | None = None
+    end_date: str | None = None
+    status_counts: FeatureDriftStatusCounts
+    features: list[FeatureDriftScore]
+
+
+class HorizonFeatureDrift(BaseModel):
+    available: bool
+    train_start: str | None = None
+    train_end: str | None = None
+    n_train_rows: int | None = None
+    windows: dict[str, FeatureDriftWindowResult] = Field(default_factory=dict)
+    reason: str | None = None
+    detail: str | None = None
+
+
+class FeatureDriftResponse(BaseModel):
+    """PSI feature-drift scores versus training-time monitoring_reference.json."""
+
+    available: bool
+    windows: list[int]
+    horizons: dict[str, HorizonFeatureDrift]
+    feature_schema_fingerprint: str | None = None
+    psi_thresholds: dict[str, float]
+    reason: str | None = None
+    detail: str | None = None

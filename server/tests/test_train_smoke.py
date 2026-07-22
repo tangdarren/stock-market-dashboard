@@ -51,6 +51,9 @@ def test_training_pipeline_runs_and_stays_realistic():
     if hm["roc_auc"] is not None:
         assert hm["roc_auc"] < 0.85
 
+    assert result.feature_reference["n_train_rows"] == result.training_metadata["n_train"]
+    assert set(result.feature_reference["features"]) == set(FEATURE_NAMES)
+
 
 @pytest.mark.parametrize("horizon", [1, 5])
 def test_targets_never_null_in_training_frame(horizon):

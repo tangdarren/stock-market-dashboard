@@ -10,6 +10,8 @@ The list of feature names produced by :func:`build_features` is exposed as
 
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 import pandas as pd
 
@@ -41,6 +43,11 @@ FEATURE_NAMES: tuple[str, ...] = (
     "rsi_14",
     "sma_5_over_sma_20",
 )
+
+
+def feature_schema_fingerprint() -> str:
+    """Short stable fingerprint of :data:`FEATURE_NAMES` for drift artifacts."""
+    return hashlib.sha1(",".join(FEATURE_NAMES).encode("utf-8")).hexdigest()[:12]
 
 
 def build_features(df: pd.DataFrame) -> pd.DataFrame:

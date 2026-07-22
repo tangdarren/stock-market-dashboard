@@ -12,6 +12,7 @@ under ``server/artifacts/``:
     metrics.json
     walk_forward_predictions.csv
     permutation_importance.json
+    monitoring_reference.json
     model_version.txt
 
 Usage:
@@ -37,6 +38,7 @@ import pandas as pd
 from app.config import ARTIFACTS_DIR, DATA_RAW_DIR
 from app.ml.artifacts import save_model, write_json
 from app.ml.features import FEATURE_NAMES
+from app.ml.monitoring import assemble_monitoring_reference
 from app.ml.normalize import normalize_ohlcv
 from app.ml.train import HorizonTrainingResult, train_all_horizons
 
@@ -114,6 +116,16 @@ def main() -> None:
     training_metadata_out = {f"{h}d": r.training_metadata for h, r in results.items()}
     write_json("training_metadata.json", training_metadata_out)
     write_json("permutation_importance.json", perm_importance_out)
+
+    monitoring_reference = assemble_monitoring_reference(
+        {h: r.feature_reference for h, r in results.items()},
+        generated_at=metrics_out["generated_at"],
+    )
+    write_json("monitoring_reference.json", monitoring_reference)
+    print(
+        f"[train] Saved monitoring_reference.json "
+        f"(fingerprint={monitoring_reference['feature_schema_fingerprint']})"
+    )
 
     walk_forward = pd.concat(walk_forward_frames, ignore_index=True)
     walk_forward_path = ARTIFACTS_DIR / "walk_forward_predictions.csv"

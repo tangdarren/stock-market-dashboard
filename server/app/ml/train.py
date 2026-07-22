@@ -32,6 +32,7 @@ from app.ml.evaluate import (
 )
 from app.ml.features import FEATURE_NAMES, build_features
 from app.ml.models import ModelSpec, model_catalog
+from app.ml.monitoring import build_horizon_feature_reference
 from app.ml.targets import add_targets, training_frame
 from app.ml.validation import chronological_holdout, make_time_series_cv
 
@@ -53,6 +54,7 @@ class HorizonTrainingResult:
     training_medians: dict[str, float]
     backtest: dict[str, Any]
     training_metadata: dict[str, Any]
+    feature_reference: dict[str, Any]
 
 
 def prepare_dataset(ohlcv: pd.DataFrame) -> pd.DataFrame:
@@ -172,6 +174,14 @@ def train_horizon(
         "adjustment": "unadjusted",
     }
 
+    # Drift reference uses the train split only — never the holdout tail.
+    feature_reference = build_horizon_feature_reference(
+        train[list(FEATURE_NAMES)],
+        horizon_days=horizon,
+        train_start=split.train_start,
+        train_end=split.train_end,
+    )
+
     return HorizonTrainingResult(
         horizon=horizon,
         selected_model_name=winner_spec.name,
@@ -188,6 +198,7 @@ def train_horizon(
         training_medians=training_medians,
         backtest=backtest_result,
         training_metadata=training_metadata,
+        feature_reference=feature_reference,
     )
 
 
