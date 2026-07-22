@@ -51,8 +51,54 @@ describe('ModelMonitorPage', () => {
     ).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /performance summary/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /holdout comparison/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /chronological series/i })).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { name: /visualization placeholders/i }),
+      screen.getByRole('heading', { name: /confidence versus actual accuracy/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /psi ranking/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: /why status is stable/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/not a trading recommendation/i),
+    ).toBeInTheDocument()
+  })
+
+  it('lets users switch the rolling performance metric', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ModelMonitorPage />, [ROUTES.MONITOR])
+
+    expect(
+      await screen.findByRole('heading', { name: /chronological series/i }),
+    ).toBeInTheDocument()
+
+    const metricGroup = screen.getByRole('radiogroup', {
+      name: /rolling performance metric/i,
+    })
+    await user.click(within(metricGroup).getByRole('radio', { name: /brier score/i }))
+    expect(
+      within(metricGroup).getByRole('radio', { name: /brier score/i }),
+    ).toHaveAttribute('aria-checked', 'true')
+
+    await user.click(
+      within(metricGroup).getByRole('radio', { name: /calibration error/i }),
+    )
+    expect(
+      within(metricGroup).getByRole('radio', { name: /calibration error/i }),
+    ).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('reveals plain-English feature drift explanations', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ModelMonitorPage />, [ROUTES.MONITOR])
+
+    expect(await screen.findByRole('heading', { name: /psi ranking/i })).toBeInTheDocument()
+    const firstFeature = screen.getByText(/rsi 14/i)
+    const details = firstFeature.closest('details')
+    expect(details).not.toBeNull()
+    await user.click(within(details as HTMLElement).getByText(/rsi 14/i))
+    expect(
+      await within(details as HTMLElement).findByText(/drifted versus training/i),
     ).toBeInTheDocument()
   })
 

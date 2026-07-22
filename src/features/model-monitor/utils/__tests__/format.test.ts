@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  confidenceReliabilityExplanation,
+  confidenceReliabilityKind,
   formatMetricScore,
   formatSignedDelta,
   parseMonitoringHorizon,
@@ -28,5 +30,13 @@ describe('model monitor format utils', () => {
     expect(unavailableReasonMessage('monitoring_reference_missing')).toMatch(
       /monitoring reference/i,
     )
+  })
+
+  it('explains overconfidence and underconfidence', () => {
+    expect(confidenceReliabilityKind(0.05)).toBe('overconfident')
+    expect(confidenceReliabilityKind(-0.05)).toBe('underconfident')
+    expect(confidenceReliabilityKind(0.01)).toBe('well_calibrated')
+    expect(confidenceReliabilityExplanation(0.04, 0.58, 0.54)).toMatch(/overconfident/i)
+    expect(confidenceReliabilityExplanation(-0.04, 0.5, 0.54)).toMatch(/underconfident/i)
   })
 })

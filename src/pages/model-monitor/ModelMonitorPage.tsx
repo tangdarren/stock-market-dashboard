@@ -3,16 +3,17 @@ import { useSearchParams } from 'react-router-dom'
 import { FadeContent } from '@/features/ui/components/FadeContent'
 import { GlassCard } from '@/features/ui/components/GlassCard'
 import { MonitorBaselineComparison } from '@/features/model-monitor/components/MonitorBaselineComparison'
-import { MonitorChartPlaceholders } from '@/features/model-monitor/components/MonitorChartPlaceholders'
+import { MonitorConfidenceReliability } from '@/features/model-monitor/components/MonitorConfidenceReliability'
 import { MonitorControls } from '@/features/model-monitor/components/MonitorControls'
+import { MonitorFeatureDriftList } from '@/features/model-monitor/components/MonitorFeatureDriftList'
+import { MonitorHealthExplanation } from '@/features/model-monitor/components/MonitorHealthExplanation'
 import { MonitorPerformanceSummary } from '@/features/model-monitor/components/MonitorPerformanceSummary'
+import { MonitorRollingPerformanceChart } from '@/features/model-monitor/components/MonitorRollingPerformanceChart'
 import { MonitorStatusCard } from '@/features/model-monitor/components/MonitorStatusCard'
 import { MonitorStatusPanel } from '@/features/model-monitor/components/MonitorStatusPanel'
 import { useModelMonitoring } from '@/features/model-monitor/hooks/useModelMonitoring'
 import type { MonitoringHorizon, MonitoringWindow } from '@/features/model-monitor/api/types'
 import {
-  formatHorizonLabel,
-  formatWindowLabel,
   parseMonitoringHorizon,
   parseMonitoringWindow,
 } from '@/features/model-monitor/utils/format'
@@ -66,8 +67,10 @@ export function ModelMonitorPage() {
     void query.refetch()
   }, [query])
 
-  const horizonLabel = useMemo(() => formatHorizonLabel(horizon), [horizon])
-  const windowLabel = useMemo(() => formatWindowLabel(windowSize), [windowSize])
+  const availableData = useMemo(
+    () => (data?.available ? data : null),
+    [data],
+  )
 
   return (
     <div className="min-h-screen overflow-x-hidden pt-28 pb-24">
@@ -120,20 +123,25 @@ export function ModelMonitorPage() {
           </FadeContent>
         ) : null}
 
-        {data?.available ? (
+        {availableData ? (
           <FadeContent className="mt-6 space-y-6">
-            <MonitorStatusCard data={data} />
-            {data.latest_performance ? (
-              <MonitorPerformanceSummary latest={data.latest_performance} />
+            <MonitorStatusCard data={availableData} />
+            {availableData.latest_performance ? (
+              <MonitorPerformanceSummary latest={availableData.latest_performance} />
             ) : null}
             <MonitorBaselineComparison
-              baseline={data.baseline}
-              latest={data.latest_performance}
+              baseline={availableData.baseline}
+              latest={availableData.latest_performance}
             />
-            <MonitorChartPlaceholders
-              horizonLabel={horizonLabel}
-              windowLabel={windowLabel}
+            <MonitorRollingPerformanceChart
+              series={availableData.rolling_series}
+              baseline={availableData.baseline}
             />
+            <MonitorConfidenceReliability
+              confidence={availableData.confidence_vs_accuracy}
+            />
+            <MonitorFeatureDriftList featureDrift={availableData.feature_drift} />
+            <MonitorHealthExplanation data={availableData} />
           </FadeContent>
         ) : null}
       </div>

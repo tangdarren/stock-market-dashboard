@@ -132,3 +132,73 @@ export function unavailableReasonMessage(reason: string | null | undefined): str
       return 'Model monitoring is temporarily unavailable.'
   }
 }
+
+export type ConfidenceReliabilityKind =
+  | 'overconfident'
+  | 'underconfident'
+  | 'well_calibrated'
+  | 'unavailable'
+
+export function confidenceReliabilityKind(
+  gap: number | null | undefined,
+): ConfidenceReliabilityKind {
+  if (gap == null || !Number.isFinite(gap)) return 'unavailable'
+  if (gap > 0.02) return 'overconfident'
+  if (gap < -0.02) return 'underconfident'
+  return 'well_calibrated'
+}
+
+export function confidenceReliabilityExplanation(
+  gap: number | null | undefined,
+  averageConfidence: number | null | undefined,
+  actualAccuracy: number | null | undefined,
+): string {
+  const kind = confidenceReliabilityKind(gap)
+  if (
+    kind === 'unavailable' ||
+    gap == null ||
+    averageConfidence == null ||
+    actualAccuracy == null
+  ) {
+    return 'Confidence and accuracy are not both available for this window.'
+  }
+  const conf = formatPercentScore(averageConfidence)
+  const acc = formatPercentScore(actualAccuracy)
+  const absGap = formatPercentScore(Math.abs(gap))
+  if (kind === 'overconfident') {
+    return `The model has recently been overconfident: average predicted confidence (${conf}) exceeds actual accuracy (${acc}) by ${absGap}.`
+  }
+  if (kind === 'underconfident') {
+    return `The model has recently been underconfident: actual accuracy (${acc}) exceeds average predicted confidence (${conf}) by ${absGap}.`
+  }
+  return `Confidence and accuracy are closely aligned for this window (confidence ${conf}, accuracy ${acc}).`
+}
+
+export function statusBadgeVariant(
+  status: MonitoringSignalStatus | null | undefined,
+): 'success' | 'warning' | 'danger' | 'neutral' {
+  switch (status) {
+    case 'stable':
+      return 'success'
+    case 'watch':
+      return 'warning'
+    case 'drift_detected':
+      return 'danger'
+    default:
+      return 'neutral'
+  }
+}
+
+export function formatFeatureName(name: string): string {
+  return name
+    .split('_')
+    .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
+    .join(' ')
+}
+
+export function formatCompactDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const parts = iso.split('-')
+  if (parts.length !== 3) return iso
+  return `${parts[1]}/${parts[2]}`
+}
