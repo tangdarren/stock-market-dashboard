@@ -215,7 +215,9 @@ describe('ModelMonitorPage', () => {
       await screen.findByRole('heading', { name: /model health needs attention/i }),
     ).toBeInTheDocument()
     expect(screen.getByLabelText(/^Overall status Watch$/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Confidence health Watch$/i)).toBeInTheDocument()
     expect(screen.getAllByText(/overconfident/i).length).toBeGreaterThan(0)
+    expect(screen.getByText(/escalates when overconfidence/i)).toBeInTheDocument()
   })
 
   it('renders drift-detected status from feature PSI', async () => {

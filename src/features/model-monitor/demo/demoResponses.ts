@@ -206,10 +206,12 @@ export function demoModelMonitoringWatch(
   window: MonitoringWindow = 30,
 ): ModelMonitoringResponse {
   const base = demoModelMonitoring(horizon, window)
+  // Accuracy drop 0.06 and overconfidence gap 0.06 stay in the watch band
+  // (< 0.10 drift). Feature PSI watch rows keep overall status at watch.
   const latest = {
     ...base.latest_performance!,
     accuracy: 0.46,
-    average_predicted_confidence: 0.62,
+    average_predicted_confidence: 0.52,
     actual_accuracy: 0.46,
     vs_baseline: {
       ...base.latest_performance!.vs_baseline,
@@ -232,10 +234,10 @@ export function demoModelMonitoringWatch(
     ],
     latest_performance: latest,
     confidence_vs_accuracy: {
-      average_predicted_confidence: 0.62,
+      average_predicted_confidence: 0.52,
       actual_accuracy: 0.46,
-      gap: 0.16,
-      status: 'drift_detected',
+      gap: 0.06,
+      status: 'watch',
     },
     feature_drift: {
       ...base.feature_drift!,

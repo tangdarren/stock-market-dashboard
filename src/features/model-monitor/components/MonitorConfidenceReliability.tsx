@@ -4,7 +4,6 @@ import type { ConfidenceVersusAccuracy } from '../api/types'
 import {
   CONFIDENCE_GAP_WATCH,
   confidenceReliabilityExplanation,
-  confidenceReliabilityKind,
   formatPercentScore,
   statusBadgeVariant,
   statusGlyph,
@@ -18,25 +17,6 @@ interface MonitorConfidenceReliabilityProps {
 export function MonitorConfidenceReliability({
   confidence,
 }: MonitorConfidenceReliabilityProps) {
-  const kind = confidenceReliabilityKind(confidence?.gap ?? null)
-  const kindLabel =
-    kind === 'overconfident'
-      ? 'Overconfident'
-      : kind === 'underconfident'
-        ? 'Underconfident'
-        : kind === 'well_calibrated'
-          ? 'Well aligned'
-          : 'Unavailable'
-
-  const kindVariant =
-    kind === 'overconfident'
-      ? 'warning'
-      : kind === 'underconfident'
-        ? 'info'
-        : kind === 'well_calibrated'
-          ? 'success'
-          : 'neutral'
-
   const confidencePct = confidence
     ? Math.max(0, Math.min(100, confidence.average_predicted_confidence * 100))
     : 0
@@ -56,22 +36,20 @@ export function MonitorConfidenceReliability({
           </h2>
           <p className="mt-1 max-w-xl text-sm text-slate-400">
             Compares how sure the model sounded with how often it was right in the latest
-            window. Gaps beyond {formatPercentScore(CONFIDENCE_GAP_WATCH)} enter the watch
-            band.
+            window. Health monitoring escalates when overconfidence reaches{' '}
+            {formatPercentScore(CONFIDENCE_GAP_WATCH)} or more — underconfidence is
+            descriptive only.
           </p>
         </div>
         {confidence ? (
-          <div className="flex flex-wrap gap-2">
-            <Badge variant={kindVariant} dot>
-              {kindLabel}
-            </Badge>
+          <span aria-label={`Confidence health ${statusLabel(confidence.status)}`}>
             <Badge variant={statusBadgeVariant(confidence.status)} dot>
               <span aria-hidden className="mr-1">
                 {statusGlyph(confidence.status)}
               </span>
               {statusLabel(confidence.status)}
             </Badge>
-          </div>
+          </span>
         ) : null}
       </div>
 

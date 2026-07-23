@@ -12,9 +12,13 @@ from app.main import create_app
 from app.ml.features import FEATURE_NAMES
 from app.ml.monitoring import (
     ACCURACY_DROP_DRIFT,
+    CONFIDENCE_GAP_DRIFT,
+    CONFIDENCE_GAP_WATCH,
     MONITORING_THRESHOLDS,
     PSI_WATCH_MAX,
     assemble_monitoring_reference,
+    classify_higher_is_worse,
+    confidence_vs_accuracy_summary,
     derive_overall_health,
     feature_drift_health_signals,
     performance_health_signals,
@@ -162,6 +166,55 @@ def test_performance_health_signals_use_central_thresholds():
     assert by_code["accuracy_drop_vs_baseline"]["threshold_drift"] == ACCURACY_DROP_DRIFT
     assert by_code["brier_rise_vs_baseline"]["status"] == "drift_detected"
     assert by_code["confidence_vs_actual_accuracy"]["status"] == "drift_detected"
+
+
+def test_confidence_gap_boundary_matches_watch_and_ignores_underconfidence():
+    assert CONFIDENCE_GAP_WATCH == 0.05
+    assert CONFIDENCE_GAP_DRIFT == 0.10
+    assert (
+        classify_higher_is_worse(
+            0.05,
+            watch_threshold=CONFIDENCE_GAP_WATCH,
+            drift_threshold=CONFIDENCE_GAP_DRIFT,
+        )
+        == "watch"
+    )
+    assert (
+        classify_higher_is_worse(
+            0.049999,
+            watch_threshold=CONFIDENCE_GAP_WATCH,
+            drift_threshold=CONFIDENCE_GAP_DRIFT,
+        )
+        == "stable"
+    )
+    assert (
+        classify_higher_is_worse(
+            0.10,
+            watch_threshold=CONFIDENCE_GAP_WATCH,
+            drift_threshold=CONFIDENCE_GAP_DRIFT,
+        )
+        == "drift_detected"
+    )
+
+    under = confidence_vs_accuracy_summary(
+        {
+            "average_predicted_confidence": 0.50,
+            "actual_accuracy": 0.60,
+        }
+    )
+    assert under is not None
+    assert under["gap"] == pytest.approx(-0.10)
+    assert under["status"] == "stable"
+
+    watch = confidence_vs_accuracy_summary(
+        {
+            "average_predicted_confidence": 0.55,
+            "actual_accuracy": 0.50,
+        }
+    )
+    assert watch is not None
+    assert watch["gap"] == pytest.approx(0.05)
+    assert watch["status"] == "watch"
 
 
 def test_feature_drift_health_signals_collapses_all_stable():

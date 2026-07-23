@@ -9,6 +9,8 @@ import {
 
 /** Matches backend CONFIDENCE_GAP_WATCH — keep UI and API bands aligned. */
 export const CONFIDENCE_GAP_WATCH = 0.05
+/** Matches backend CONFIDENCE_GAP_DRIFT. */
+export const CONFIDENCE_GAP_DRIFT = 0.1
 
 const MONTHS = [
   'Jan',
@@ -214,16 +216,38 @@ export type ConfidenceReliabilityKind =
   | 'well_calibrated'
   | 'unavailable'
 
+/**
+ * Descriptive confidence-versus-accuracy direction.
+ * Health escalation uses only overconfidence via {@link confidenceOverconfidenceStatus}
+ * (and the authoritative API `status` field).
+ */
 export function confidenceReliabilityKind(
   gap: number | null | undefined,
   watchThreshold: number = CONFIDENCE_GAP_WATCH,
 ): ConfidenceReliabilityKind {
   if (gap == null || !Number.isFinite(gap)) return 'unavailable'
-  // Mirror backend: overconfidence uses max(0, gap) against watch/drift bands.
-  // For narrative labels, treat |gap| below the watch band as aligned.
-  if (gap > watchThreshold) return 'overconfident'
-  if (gap < -watchThreshold) return 'underconfident'
+  // Mirror backend: overconfidence = max(0, gap); stable when overconfidence < watch.
+  // Equality at the watch threshold is watch/overconfident.
+  const overconfidence = Math.max(0, gap)
+  if (overconfidence >= watchThreshold) return 'overconfident'
+  if (gap < 0) return 'underconfident'
   return 'well_calibrated'
+}
+
+/**
+ * Health band for overconfidence alone — matches backend
+ * ``classify_higher_is_worse(max(0, gap), ...)``.
+ */
+export function confidenceOverconfidenceStatus(
+  gap: number | null | undefined,
+  watchThreshold: number = CONFIDENCE_GAP_WATCH,
+  driftThreshold: number = CONFIDENCE_GAP_DRIFT,
+): MonitoringSignalStatus | 'unavailable' {
+  if (gap == null || !Number.isFinite(gap)) return 'unavailable'
+  const overconfidence = Math.max(0, gap)
+  if (overconfidence < watchThreshold) return 'stable'
+  if (overconfidence < driftThreshold) return 'watch'
+  return 'drift_detected'
 }
 
 export function confidenceReliabilityExplanation(
@@ -232,10 +256,9 @@ export function confidenceReliabilityExplanation(
   actualAccuracy: number | null | undefined,
   watchThreshold: number = CONFIDENCE_GAP_WATCH,
 ): string {
-  const kind = confidenceReliabilityKind(gap, watchThreshold)
   if (
-    kind === 'unavailable' ||
     gap == null ||
+    !Number.isFinite(gap) ||
     averageConfidence == null ||
     actualAccuracy == null
   ) {
@@ -244,11 +267,12 @@ export function confidenceReliabilityExplanation(
   const conf = formatPercentScore(averageConfidence)
   const acc = formatPercentScore(actualAccuracy)
   const absGap = formatPercentScore(Math.abs(gap))
+  const kind = confidenceReliabilityKind(gap, watchThreshold)
   if (kind === 'overconfident') {
-    return `The model has recently been overconfident: average predicted confidence (${conf}) exceeds actual accuracy (${acc}) by ${absGap}.`
+    return `The model has recently been overconfident: average predicted confidence (${conf}) exceeds actual accuracy (${acc}) by ${absGap}. Health monitoring escalates on overconfidence of ${formatPercentScore(watchThreshold)} or more.`
   }
   if (kind === 'underconfident') {
-    return `The model has recently been underconfident: actual accuracy (${acc}) exceeds average predicted confidence (${conf}) by ${absGap}.`
+    return `Actual accuracy (${acc}) exceeds average predicted confidence (${conf}) by ${absGap}. Underconfidence is shown for context only — health bands escalate on overconfidence, not underconfidence.`
   }
   return `Confidence and accuracy are closely aligned for this window (confidence ${conf}, accuracy ${acc}).`
 }

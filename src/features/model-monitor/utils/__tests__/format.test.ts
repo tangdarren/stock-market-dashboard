@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CONFIDENCE_GAP_DRIFT,
   CONFIDENCE_GAP_WATCH,
+  confidenceOverconfidenceStatus,
   confidenceReliabilityExplanation,
   confidenceReliabilityKind,
   formatCompactDate,
@@ -18,6 +20,32 @@ import {
   unavailableReasonMessage,
 } from '../format'
 import { cycleRadioOption } from '../radioGroup'
+import { demoModelMonitoringWatch } from '../../demo/demoResponses'
+
+// Local re-check of demo aggregation expectations without importing Python.
+function demoWatchWouldAggregateToWatch(): boolean {
+  const demo = demoModelMonitoringWatch()
+  const latest = demo.latest_performance!
+  const accuracyDrop = Math.max(0, -(latest.vs_baseline.accuracy ?? 0))
+  const overconfidence = Math.max(0, demo.confidence_vs_accuracy!.gap)
+  const featureStatuses =
+    demo.feature_drift?.ranked.map((row) => row.status) ?? []
+  const bands = [
+    accuracyDrop >= CONFIDENCE_GAP_DRIFT
+      ? 'drift_detected'
+      : accuracyDrop >= CONFIDENCE_GAP_WATCH
+        ? 'watch'
+        : 'stable',
+    overconfidence >= CONFIDENCE_GAP_DRIFT
+      ? 'drift_detected'
+      : overconfidence >= CONFIDENCE_GAP_WATCH
+        ? 'watch'
+        : 'stable',
+    ...featureStatuses.filter((s) => s === 'watch' || s === 'drift_detected'),
+  ]
+  if (bands.includes('drift_detected')) return false
+  return bands.includes('watch')
+}
 
 describe('model monitor format utils', () => {
   it('parses horizon and window query values with safe fallbacks', () => {
@@ -60,18 +88,39 @@ describe('model monitor format utils', () => {
     )
   })
 
-  it('explains confidence alignment using the shared watch threshold', () => {
+  it('aligns overconfidence boundaries with backend watch/drift bands', () => {
     expect(CONFIDENCE_GAP_WATCH).toBe(0.05)
-    expect(confidenceReliabilityKind(0.05)).toBe('well_calibrated')
-    expect(confidenceReliabilityKind(0.051)).toBe('overconfident')
-    expect(confidenceReliabilityKind(-0.05)).toBe('well_calibrated')
-    expect(confidenceReliabilityKind(-0.051)).toBe('underconfident')
+    expect(CONFIDENCE_GAP_DRIFT).toBe(0.1)
+
+    expect(confidenceOverconfidenceStatus(0.049999)).toBe('stable')
+    expect(confidenceOverconfidenceStatus(0.05)).toBe('watch')
+    expect(confidenceOverconfidenceStatus(0.099999)).toBe('watch')
+    expect(confidenceOverconfidenceStatus(0.1)).toBe('drift_detected')
+    expect(confidenceOverconfidenceStatus(-0.08)).toBe('stable')
+
+    expect(confidenceReliabilityKind(0.05)).toBe('overconfident')
+    expect(confidenceReliabilityKind(0.049)).toBe('well_calibrated')
+    expect(confidenceReliabilityKind(-0.08)).toBe('underconfident')
     expect(confidenceReliabilityKind(0.01)).toBe('well_calibrated')
-    expect(confidenceReliabilityExplanation(0.06, 0.58, 0.52)).toMatch(/overconfident/i)
-    expect(confidenceReliabilityExplanation(-0.06, 0.5, 0.56)).toMatch(
-      /underconfident/i,
+
+    expect(confidenceReliabilityExplanation(0.05, 0.58, 0.53)).toMatch(/overconfident/i)
+    expect(confidenceReliabilityExplanation(0.05, 0.58, 0.53)).toMatch(
+      /escalates on overconfidence/i,
+    )
+    expect(confidenceReliabilityExplanation(-0.08, 0.5, 0.58)).toMatch(/underconfidence/i)
+    expect(confidenceReliabilityExplanation(-0.08, 0.5, 0.58)).toMatch(
+      /descriptive only|context only/i,
     )
     expect(confidenceReliabilityExplanation(0.04, 0.58, 0.54)).toMatch(/aligned/i)
+  })
+
+  it('keeps the watch demo inside the watch aggregation band', () => {
+    const demo = demoModelMonitoringWatch()
+    expect(demo.status).toBe('watch')
+    expect(demo.confidence_vs_accuracy?.status).toBe('watch')
+    expect(demo.confidence_vs_accuracy?.gap).toBeLessThan(CONFIDENCE_GAP_DRIFT)
+    expect(demo.confidence_vs_accuracy?.gap).toBeGreaterThanOrEqual(CONFIDENCE_GAP_WATCH)
+    expect(demoWatchWouldAggregateToWatch()).toBe(true)
   })
 })
 
