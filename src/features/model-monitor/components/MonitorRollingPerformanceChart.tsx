@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type KeyboardEvent } from 'react'
 import {
   CartesianGrid,
   Line,
@@ -15,8 +15,10 @@ import type { HoldoutBaselineSummary, RollingWindowPoint } from '../api/types'
 import {
   formatCompactDate,
   formatMetricScore,
+  formatMonitorDate,
   formatPercentScore,
 } from '../utils/format'
+import { handleRadioGroupKeyDown } from '../utils/radioGroup'
 
 type RollingMetricKey = 'accuracy' | 'brier' | 'ece'
 
@@ -133,8 +135,13 @@ export function MonitorRollingPerformanceChart({
       baselineValue == null
         ? 'No holdout baseline reference is available for this metric.'
         : `Holdout baseline is ${formatMetricValue(metric, baselineValue)}.`
-    return `Rolling ${METRIC_OPTIONS.find((o) => o.key === metric)?.label.toLowerCase()} ends at ${formatMetricValue(metric, last.value)} on ${last.end_date} across ${last.n_observations} observations. ${baselineText}`
+    return `Rolling ${METRIC_OPTIONS.find((o) => o.key === metric)?.label.toLowerCase()} ends at ${formatMetricValue(metric, last.value)} on ${formatMonitorDate(last.end_date)} across ${last.n_observations} observations. ${baselineText}`
   }, [baselineValue, metric, plotted])
+
+  const metricKeys = METRIC_OPTIONS.map((option) => option.key)
+  const onMetricKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    handleRadioGroupKeyDown(event, metricKeys, metric, setMetric)
+  }
 
   return (
     <GlassCard className="p-6 sm:p-8">
@@ -152,6 +159,7 @@ export function MonitorRollingPerformanceChart({
         <div
           role="radiogroup"
           aria-label="Rolling performance metric"
+          onKeyDown={onMetricKeyDown}
           className="flex flex-wrap gap-2"
         >
           {METRIC_OPTIONS.map((option) => {
@@ -162,6 +170,7 @@ export function MonitorRollingPerformanceChart({
                 type="button"
                 role="radio"
                 aria-checked={selected}
+                tabIndex={selected ? 0 : -1}
                 onClick={() => setMetric(option.key)}
                 className={cn(
                   'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',

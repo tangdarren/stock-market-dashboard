@@ -1,6 +1,11 @@
 import { GlassCard } from '@/features/ui/components/GlassCard'
 import type { ModelMonitoringResponse } from '../api/types'
-import { overallStatusHeadline, statusLabel } from '../utils/format'
+import {
+  humanizeReasonCode,
+  overallStatusHeadline,
+  statusGlyph,
+  statusLabel,
+} from '../utils/format'
 
 interface MonitorHealthExplanationProps {
   data: ModelMonitoringResponse
@@ -38,13 +43,18 @@ export function MonitorHealthExplanation({ data }: MonitorHealthExplanationProps
                   {reason.source}
                 </span>
                 <span className="text-slate-600">·</span>
-                <code className="rounded bg-white/[0.04] px-1.5 py-0.5 text-[11px] text-slate-300">
-                  {reason.code}
-                </code>
+                <span className="rounded bg-white/[0.04] px-1.5 py-0.5 text-[11px] text-slate-300">
+                  {humanizeReasonCode(reason.code)}
+                </span>
                 {reason.status ? (
                   <>
                     <span className="text-slate-600">·</span>
-                    <span className="text-slate-400">{statusLabel(reason.status)}</span>
+                    <span className="text-slate-400">
+                      <span aria-hidden className="mr-1">
+                        {statusGlyph(reason.status)}
+                      </span>
+                      {statusLabel(reason.status)}
+                    </span>
                   </>
                 ) : null}
                 {reason.feature ? (

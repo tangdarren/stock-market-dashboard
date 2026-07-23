@@ -7,6 +7,24 @@ import {
   type MonitoringWindow,
 } from '../api/types'
 
+/** Matches backend CONFIDENCE_GAP_WATCH — keep UI and API bands aligned. */
+export const CONFIDENCE_GAP_WATCH = 0.05
+
+const MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const
+
 export function isMonitoringHorizon(value: unknown): value is MonitoringHorizon {
   return typeof value === 'string' && (MONITORING_HORIZONS as readonly string[]).includes(value)
 }
@@ -57,12 +75,45 @@ export function formatPercentScore(
   return `${(value * 100).toFixed(decimals)}%`
 }
 
+/** Signed percentage-point delta for accuracy/confidence fraction differences. */
+export function formatSignedPercentDelta(
+  value: number | null | undefined,
+  decimals = 1,
+): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  const pct = value * 100
+  const sign = pct > 0 ? '+' : ''
+  return `${sign}${pct.toFixed(decimals)} pp`
+}
+
 export function formatHorizonLabel(horizon: MonitoringHorizon): string {
   return horizon === '1d' ? '1-day' : '5-day'
 }
 
 export function formatWindowLabel(window: MonitoringWindow | number): string {
   return `${window}-session`
+}
+
+/**
+ * Format a calendar ISO date (YYYY-MM-DD) without timezone shifting.
+ * Falls back to the raw string when the shape is unexpected.
+ */
+export function formatMonitorDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!match) return iso
+  const year = match[1]
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (month < 1 || month > 12 || day < 1 || day > 31) return iso
+  return `${MONTHS[month - 1]} ${day}, ${year}`
+}
+
+export function formatCompactDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!match) return iso
+  return `${match[2]}/${match[3]}`
 }
 
 export function statusLabel(status: MonitoringSignalStatus | null | undefined): string {
@@ -77,6 +128,22 @@ export function statusLabel(status: MonitoringSignalStatus | null | undefined): 
       return 'Insufficient data'
     default:
       return 'Unavailable'
+  }
+}
+
+/** Color-independent glyph paired with status labels. */
+export function statusGlyph(status: MonitoringSignalStatus | null | undefined): string {
+  switch (status) {
+    case 'stable':
+      return '●'
+    case 'watch':
+      return '▲'
+    case 'drift_detected':
+      return '■'
+    case 'insufficient_data':
+      return '○'
+    default:
+      return '–'
   }
 }
 
@@ -115,17 +182,25 @@ export function overallStatusHeadline(
 export function unavailableReasonMessage(reason: string | null | undefined): string {
   switch (reason) {
     case 'walk_forward_artifact_missing':
-      return 'Walk-forward predictions are missing. Train the models to generate monitoring artifacts.'
+      return 'Out-of-sample predictions are missing. Train the models to generate monitoring artifacts.'
     case 'walk_forward_artifact_malformed':
-      return 'Walk-forward predictions are malformed and cannot be scored.'
+      return 'Out-of-sample predictions are malformed and cannot be scored.'
     case 'monitoring_reference_missing':
       return 'The monitoring reference artifact is missing. Retrain to write monitoring_reference.json.'
     case 'monitoring_reference_malformed':
       return 'The monitoring reference artifact is malformed.'
+    case 'monitoring_reference_horizon_missing':
+      return 'No feature-drift reference exists for the selected horizon. Retrain to refresh monitoring.'
     case 'feature_schema_mismatch':
       return 'Feature schema changed since the reference was written. Retrain to refresh monitoring.'
     case 'market_history_missing':
       return 'Local SPY history is missing, so recent feature drift cannot be scored.'
+    case 'market_history_malformed':
+      return 'Local SPY history could not be parsed for feature drift scoring.'
+    case 'insufficient_feature_history':
+      return 'Not enough complete engineered feature rows for the selected window.'
+    case 'feature_drift_unavailable':
+      return 'Feature-drift scoring failed for this selection.'
     case 'insufficient_observations':
       return 'Not enough complete observations for the selected window.'
     default:
@@ -141,10 +216,13 @@ export type ConfidenceReliabilityKind =
 
 export function confidenceReliabilityKind(
   gap: number | null | undefined,
+  watchThreshold: number = CONFIDENCE_GAP_WATCH,
 ): ConfidenceReliabilityKind {
   if (gap == null || !Number.isFinite(gap)) return 'unavailable'
-  if (gap > 0.02) return 'overconfident'
-  if (gap < -0.02) return 'underconfident'
+  // Mirror backend: overconfidence uses max(0, gap) against watch/drift bands.
+  // For narrative labels, treat |gap| below the watch band as aligned.
+  if (gap > watchThreshold) return 'overconfident'
+  if (gap < -watchThreshold) return 'underconfident'
   return 'well_calibrated'
 }
 
@@ -152,8 +230,9 @@ export function confidenceReliabilityExplanation(
   gap: number | null | undefined,
   averageConfidence: number | null | undefined,
   actualAccuracy: number | null | undefined,
+  watchThreshold: number = CONFIDENCE_GAP_WATCH,
 ): string {
-  const kind = confidenceReliabilityKind(gap)
+  const kind = confidenceReliabilityKind(gap, watchThreshold)
   if (
     kind === 'unavailable' ||
     gap == null ||
@@ -196,9 +275,10 @@ export function formatFeatureName(name: string): string {
     .join(' ')
 }
 
-export function formatCompactDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const parts = iso.split('-')
-  if (parts.length !== 3) return iso
-  return `${parts[1]}/${parts[2]}`
+export function humanizeReasonCode(code: string): string {
+  return code
+    .split('_')
+    .filter(Boolean)
+    .map((seg) => seg.charAt(0).toUpperCase() + seg.slice(1))
+    .join(' ')
 }

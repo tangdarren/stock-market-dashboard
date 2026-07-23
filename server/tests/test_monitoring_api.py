@@ -184,7 +184,8 @@ def test_service_unavailable_without_walk_forward(tmp_path, monkeypatch):
     ModelMonitoringResponse.model_validate(payload)
 
 
-def test_service_unavailable_without_monitoring_reference(tmp_path, monkeypatch):
+def test_service_soft_degrades_without_monitoring_reference(tmp_path, monkeypatch):
+    """Rolling performance can still be served when feature-drift artifacts are absent."""
     from app import config as config_module
 
     artifacts = tmp_path / "artifacts"
@@ -200,8 +201,13 @@ def test_service_unavailable_without_monitoring_reference(tmp_path, monkeypatch)
     synthetic_ohlcv(n=200).to_csv(data_raw / "spy_daily.csv", index=False)
 
     payload = MonitoringService().get_monitoring(horizon="1d", window=30)
-    assert payload["available"] is False
+    assert payload["available"] is True
+    assert payload["latest_performance"] is not None
+    assert payload["feature_drift"] is None
     assert payload["reason"] == "monitoring_reference_missing"
+    assert any(
+        r.get("code") == "monitoring_reference_missing" for r in payload["status_reasons"]
+    )
     ModelMonitoringResponse.model_validate(payload)
 
 
@@ -346,3 +352,109 @@ def test_monitoring_endpoint_malformed_walk_forward(tmp_path, monkeypatch):
     assert body["available"] is False
     assert body["reason"] == "walk_forward_artifact_malformed"
     ModelMonitoringResponse.model_validate(body)
+
+
+def test_monitoring_endpoint_all_horizons_and_windows(tmp_path, monkeypatch):
+    _seed_monitoring_artifacts(tmp_path, monkeypatch)
+
+    with _client() as client:
+        for horizon in ("1d", "5d"):
+            for window in (30, 60, 120, 252):
+                r = client.get(
+                    "/api/v1/model/monitoring",
+                    params={"horizon": horizon, "window": window},
+                )
+                assert r.status_code == 200
+                body = r.json()
+                ModelMonitoringResponse.model_validate(body)
+                assert body["available"] is True
+                assert body["horizon"] == horizon
+                assert body["window"] == window
+                assert body["latest_performance"]["n_observations"] == window
+                assert body["observation_counts"]["rolling_scored"] == window
+                assert body["observation_counts"]["feature_scored"] == window
+
+
+def test_monitoring_endpoint_watch_status_from_accuracy_drop(tmp_path, monkeypatch):
+    _seed_monitoring_artifacts(tmp_path, monkeypatch)
+    from app import config as config_module
+
+    # Holdout baseline far above perfect walk-forward accuracy → large accuracy drop.
+    metrics = _metrics_payload(accuracy=0.99, brier=0.01)
+    # Force a weak walk-forward so accuracy drops into the watch/drift band.
+    dates = pd.bdate_range("2024-01-02", periods=80)
+    rows: list[dict[str, object]] = []
+    for i, ts in enumerate(dates):
+        iso = ts.date().isoformat()
+        for h in (1, 5):
+            # ~50% accuracy with moderate confidence
+            actual = i % 2
+            predicted = 1 if i % 3 != 0 else 0
+            rows.append(
+                {
+                    "date": iso,
+                    "horizon_days": h,
+                    "prob_up": 0.7,
+                    "predicted": predicted,
+                    "actual": actual,
+                    "correct": int(predicted == actual),
+                    "realized_return": 0.01 if actual == 1 else -0.01,
+                }
+            )
+    write_walk_forward(tmp_path, pd.DataFrame(rows), monkeypatch)
+    (config_module.ARTIFACTS_DIR / "metrics.json").write_text(json.dumps(metrics))
+
+    payload = MonitoringService().get_monitoring(horizon="1d", window=30)
+    assert payload["available"] is True
+    assert payload["status"] in {"watch", "drift_detected"}
+    ModelMonitoringResponse.model_validate(payload)
+
+
+def test_monitoring_endpoint_stable_status_with_matched_baseline(tmp_path, monkeypatch):
+    _seed_monitoring_artifacts(tmp_path, monkeypatch, perfect_walk_forward=True)
+
+    payload = MonitoringService().get_monitoring(horizon="1d", window=30)
+    assert payload["available"] is True
+    assert payload["latest_performance"]["accuracy"] == pytest.approx(1.0)
+    assert payload["confidence_vs_accuracy"]["status"] == "stable"
+    # Performance signals alone stay stable against the matched baseline even if
+    # recent market features drift relative to the train-split reference.
+    perf_signals = performance_health_signals(payload["latest_performance"])
+    assert perf_signals
+    assert all(s["status"] == "stable" for s in perf_signals)
+    ModelMonitoringResponse.model_validate(payload)
+
+
+def test_monitoring_endpoint_malformed_reference(tmp_path, monkeypatch):
+    _seed_monitoring_artifacts(tmp_path, monkeypatch)
+    from app import config as config_module
+
+    (config_module.ARTIFACTS_DIR / "monitoring_reference.json").write_text("{not-json")
+
+    payload = MonitoringService().get_monitoring(horizon="1d", window=30)
+    assert payload["available"] is True
+    assert payload["feature_drift"] is None
+    assert payload["reason"] in {
+        "monitoring_reference_malformed",
+        "monitoring_reference_missing",
+    }
+    ModelMonitoringResponse.model_validate(payload)
+
+
+def test_monitoring_endpoint_schema_mismatch(tmp_path, monkeypatch):
+    _seed_monitoring_artifacts(tmp_path, monkeypatch)
+    from app import config as config_module
+
+    reference = json.loads(
+        (config_module.ARTIFACTS_DIR / "monitoring_reference.json").read_text()
+    )
+    reference["feature_schema_fingerprint"] = "intentionally-wrong"
+    (config_module.ARTIFACTS_DIR / "monitoring_reference.json").write_text(
+        json.dumps(reference)
+    )
+
+    payload = MonitoringService().get_monitoring(horizon="1d", window=30)
+    assert payload["available"] is True
+    assert payload["feature_drift"] is None
+    assert payload["reason"] == "feature_schema_mismatch"
+    ModelMonitoringResponse.model_validate(payload)

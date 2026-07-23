@@ -6,6 +6,7 @@ import {
   formatFeatureName,
   formatMetricScore,
   statusBadgeVariant,
+  statusGlyph,
   statusLabel,
 } from '../utils/format'
 
@@ -75,6 +76,9 @@ export function MonitorFeatureDriftList({ featureDrift }: MonitorFeatureDriftLis
                           {formatFeatureName(row.feature)}
                         </span>
                         <Badge variant={statusBadgeVariant(row.status)} dot>
+                          <span aria-hidden className="mr-1">
+                            {statusGlyph(row.status)}
+                          </span>
                           {statusLabel(row.status)}
                         </Badge>
                       </div>

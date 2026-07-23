@@ -159,6 +159,38 @@ def test_rolling_series_is_chronological_and_window_sized():
     assert ends[-1] == frame.loc[frame["horizon_days"] == 1, "date"].iloc[-1]
 
 
+def test_rolling_windows_do_not_use_future_rows():
+    """Each series point must only score rows on or before its end_date."""
+    dates = _dates(40)
+    rows: list[dict[str, object]] = []
+    for i, ts in enumerate(dates):
+        iso = ts.date().isoformat()
+        # Accuracy flips from 1.0 in the first half to 0.0 in the second half.
+        actual = 1
+        predicted = 1 if i < 20 else 0
+        rows.append(
+            {
+                "date": iso,
+                "horizon_days": 1,
+                "prob_up": 0.9,
+                "predicted": predicted,
+                "actual": actual,
+                "correct": int(predicted == actual),
+                "realized_return": 0.01,
+            }
+        )
+    frame = pd.DataFrame(rows)
+    result = rolling_performance_for_horizon(frame, horizon_days=1, window=10)
+    # First completed window uses only the first 10 (all correct).
+    assert result["series"][0]["accuracy"] == pytest.approx(1.0)
+    assert result["series"][0]["end_date"] == dates[9].date().isoformat()
+    # Window ending at index 29 includes only past-bad rows (indices 20-29).
+    late = next(p for p in result["series"] if p["end_date"] == dates[29].date().isoformat())
+    assert late["accuracy"] == pytest.approx(0.0)
+    assert late["start_date"] == dates[20].date().isoformat()
+
+
+
 def test_horizons_are_computed_separately():
     dates = _dates(40)
     rows: list[dict[str, object]] = []

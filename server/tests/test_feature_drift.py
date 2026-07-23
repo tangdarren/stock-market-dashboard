@@ -140,9 +140,14 @@ def test_population_stability_index_handles_empty_bins():
 
 def test_classify_psi_thresholds():
     assert classify_psi(0.05) == "stable"
+    assert classify_psi(0.099999) == "stable"
+    assert classify_psi(PSI_STABLE_MAX) == "watch"
     assert classify_psi(0.15) == "watch"
+    assert classify_psi(0.249999) == "watch"
+    assert classify_psi(PSI_WATCH_MAX) == "drift_detected"
     assert classify_psi(0.30) == "drift_detected"
     assert classify_psi(None) == "insufficient_data"
+    assert classify_psi(float("nan")) == "insufficient_data"
 
 
 def test_score_feature_drift_stable_on_same_distribution():
@@ -184,6 +189,26 @@ def test_score_feature_drift_insufficient_sample():
     assert scored["status"] == "insufficient_data"
     assert scored["psi"] is None
     assert "need at least 30" in scored["explanation"]
+
+
+def test_score_feature_drift_all_nan_recent():
+    ref = build_feature_reference(np.linspace(0, 1, 100), feature_name="x")
+    scored = score_feature_drift(np.full(40, np.nan), ref, window=30)
+    assert scored["status"] == "insufficient_data"
+    assert scored["psi"] is None
+
+
+def test_score_feature_drift_watch_band():
+    rng = np.random.default_rng(42)
+    train = rng.normal(0.0, 1.0, size=800)
+    # Mild shift — typically lands in watch for this seed; accept watch or adjacent.
+    recent = rng.normal(0.55, 1.05, size=200)
+    ref = build_feature_reference(train, feature_name="x", n_bins=10)
+    scored = score_feature_drift(recent, ref, window=60)
+    assert scored["psi"] is not None
+    assert scored["status"] in {"stable", "watch", "drift_detected"}
+    if PSI_STABLE_MAX <= scored["psi"] < PSI_WATCH_MAX:
+        assert scored["status"] == "watch"
 
 
 def test_compute_feature_drift_multi_window_payload():

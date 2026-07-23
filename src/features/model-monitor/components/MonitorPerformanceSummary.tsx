@@ -1,7 +1,12 @@
 import { GlassCard } from '@/features/ui/components/GlassCard'
-import { formatDate } from '@/features/forecast/utils/format'
 import type { RollingWindowPoint } from '../api/types'
-import { formatMetricScore, formatPercentScore } from '../utils/format'
+import {
+  formatMetricScore,
+  formatMonitorDate,
+  formatPercentScore,
+  formatSignedDelta,
+  formatSignedPercentDelta,
+} from '../utils/format'
 
 interface MonitorPerformanceSummaryProps {
   latest: RollingWindowPoint
@@ -37,7 +42,7 @@ export function MonitorPerformanceSummary({ latest }: MonitorPerformanceSummaryP
           </p>
           <h2 className="mt-1 text-xl font-semibold text-white">Performance summary</h2>
           <p className="mt-1 text-sm text-slate-400">
-            {formatDate(latest.start_date)} – {formatDate(latest.end_date)} ·{' '}
+            {formatMonitorDate(latest.start_date)} – {formatMonitorDate(latest.end_date)} ·{' '}
             {latest.n_observations} observations
           </p>
         </div>
@@ -47,12 +52,12 @@ export function MonitorPerformanceSummary({ latest }: MonitorPerformanceSummaryP
         <MetricCard
           label="Accuracy"
           value={formatPercentScore(latest.accuracy)}
-          hint={`Δ baseline ${formatMetricScore(latest.vs_baseline.accuracy)}`}
+          hint={`Δ baseline ${formatSignedPercentDelta(latest.vs_baseline.accuracy)}`}
         />
         <MetricCard
           label="Brier score"
           value={formatMetricScore(latest.brier)}
-          hint={`Δ baseline ${formatMetricScore(latest.vs_baseline.brier)}`}
+          hint={`Δ baseline ${formatSignedDelta(latest.vs_baseline.brier)}`}
         />
         <MetricCard
           label="Expected calibration error"

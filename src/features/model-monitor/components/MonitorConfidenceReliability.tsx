@@ -2,10 +2,12 @@ import { Badge } from '@/components/common/Badge'
 import { GlassCard } from '@/features/ui/components/GlassCard'
 import type { ConfidenceVersusAccuracy } from '../api/types'
 import {
+  CONFIDENCE_GAP_WATCH,
   confidenceReliabilityExplanation,
   confidenceReliabilityKind,
   formatPercentScore,
   statusBadgeVariant,
+  statusGlyph,
   statusLabel,
 } from '../utils/format'
 
@@ -54,7 +56,8 @@ export function MonitorConfidenceReliability({
           </h2>
           <p className="mt-1 max-w-xl text-sm text-slate-400">
             Compares how sure the model sounded with how often it was right in the latest
-            window.
+            window. Gaps beyond {formatPercentScore(CONFIDENCE_GAP_WATCH)} enter the watch
+            band.
           </p>
         </div>
         {confidence ? (
@@ -63,6 +66,9 @@ export function MonitorConfidenceReliability({
               {kindLabel}
             </Badge>
             <Badge variant={statusBadgeVariant(confidence.status)} dot>
+              <span aria-hidden className="mr-1">
+                {statusGlyph(confidence.status)}
+              </span>
               {statusLabel(confidence.status)}
             </Badge>
           </div>
@@ -83,7 +89,11 @@ export function MonitorConfidenceReliability({
             )}
           </p>
 
-          <div className="space-y-4" role="group" aria-label="Confidence and accuracy comparison">
+          <div
+            className="space-y-4"
+            role="group"
+            aria-label="Confidence and accuracy comparison"
+          >
             <ComparisonBar
               label="Average predicted confidence"
               valueLabel={formatPercentScore(confidence.average_predicted_confidence)}

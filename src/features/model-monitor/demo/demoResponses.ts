@@ -1,6 +1,5 @@
 import type {
   FeatureDriftScore,
-  FeatureDriftStatusCounts,
   HoldoutBaselineSummary,
   ModelMonitoringResponse,
   MonitoringHorizon,
@@ -61,13 +60,6 @@ const FEATURE_ROW = (
           : `${feature}: insufficient recent observations.`,
 })
 
-const STATUS_COUNTS: FeatureDriftStatusCounts = {
-  stable: 22,
-  watch: 3,
-  drift_detected: 1,
-  insufficient_data: 0,
-}
-
 export function demoModelMonitoring(
   horizon: MonitoringHorizon = '1d',
   window: MonitoringWindow = 30,
@@ -109,14 +101,19 @@ export function demoModelMonitoring(
     },
     feature_drift: {
       ranked: [
-        FEATURE_ROW('rsi_14', 'drift_detected', 0.31),
-        FEATURE_ROW('rolling_vol_20', 'watch', 0.14),
-        FEATURE_ROW('return_5d', 'watch', 0.12),
-        FEATURE_ROW('macd', 'watch', 0.11),
-        FEATURE_ROW('return_1d_lag', 'stable', 0.04),
-        FEATURE_ROW('volume_zscore_20', 'stable', 0.03),
+        FEATURE_ROW('rsi_14', 'stable', 0.04),
+        FEATURE_ROW('rolling_vol_20', 'stable', 0.03),
+        FEATURE_ROW('return_5d', 'stable', 0.03),
+        FEATURE_ROW('macd', 'stable', 0.02),
+        FEATURE_ROW('return_1d_lag', 'stable', 0.02),
+        FEATURE_ROW('volume_zscore_20', 'stable', 0.01),
       ],
-      status_counts: STATUS_COUNTS,
+      status_counts: {
+        stable: 26,
+        watch: 0,
+        drift_detected: 0,
+        insufficient_data: 0,
+      },
       start_date: '2025-06-01',
       end_date: '2025-07-15',
       train_start: '2010-01-05',
@@ -202,6 +199,95 @@ export const demoModelMonitoringUnavailable: ModelMonitoringResponse = {
   },
   reason: 'walk_forward_artifact_missing',
   detail: 'Walk-forward predictions artifact is not present. Run training first.',
+}
+
+export function demoModelMonitoringWatch(
+  horizon: MonitoringHorizon = '1d',
+  window: MonitoringWindow = 30,
+): ModelMonitoringResponse {
+  const base = demoModelMonitoring(horizon, window)
+  const latest = {
+    ...base.latest_performance!,
+    accuracy: 0.46,
+    average_predicted_confidence: 0.62,
+    actual_accuracy: 0.46,
+    vs_baseline: {
+      ...base.latest_performance!.vs_baseline,
+      accuracy: -0.06,
+      actual_accuracy: -0.06,
+    },
+  }
+  return {
+    ...base,
+    status: 'watch',
+    status_explanation:
+      'Model health is on watch because performance signal `accuracy_drop_vs_baseline` reached the watch band.',
+    status_reasons: [
+      {
+        source: 'performance',
+        code: 'accuracy_drop_vs_baseline',
+        status: 'watch',
+        detail: 'Rolling accuracy drop versus holdout baseline is 0.060.',
+      },
+    ],
+    latest_performance: latest,
+    confidence_vs_accuracy: {
+      average_predicted_confidence: 0.62,
+      actual_accuracy: 0.46,
+      gap: 0.16,
+      status: 'drift_detected',
+    },
+    feature_drift: {
+      ...base.feature_drift!,
+      ranked: [
+        FEATURE_ROW('rolling_vol_20', 'watch', 0.14),
+        FEATURE_ROW('return_5d', 'watch', 0.12),
+        FEATURE_ROW('rsi_14', 'stable', 0.04),
+      ],
+      status_counts: {
+        stable: 23,
+        watch: 3,
+        drift_detected: 0,
+        insufficient_data: 0,
+      },
+    },
+  }
+}
+
+export function demoModelMonitoringDrift(
+  horizon: MonitoringHorizon = '1d',
+  window: MonitoringWindow = 30,
+): ModelMonitoringResponse {
+  const base = demoModelMonitoring(horizon, window)
+  return {
+    ...base,
+    status: 'drift_detected',
+    status_explanation:
+      'Model health is drift_detected because feature_drift signal `psi_drift_detected` reached or exceeded the drift threshold.',
+    status_reasons: [
+      {
+        source: 'feature_drift',
+        code: 'psi_drift_detected',
+        status: 'drift_detected',
+        feature: 'rsi_14',
+        detail: 'rsi_14 has drifted versus training (PSI=0.310).',
+      },
+    ],
+    feature_drift: {
+      ...base.feature_drift!,
+      ranked: [
+        FEATURE_ROW('rsi_14', 'drift_detected', 0.31),
+        FEATURE_ROW('rolling_vol_20', 'watch', 0.14),
+        FEATURE_ROW('return_1d_lag', 'stable', 0.04),
+      ],
+      status_counts: {
+        stable: 22,
+        watch: 3,
+        drift_detected: 1,
+        insufficient_data: 0,
+      },
+    },
+  }
 }
 
 export const demoMonitoring = demoModelMonitoring()

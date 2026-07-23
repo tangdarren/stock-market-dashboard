@@ -1,7 +1,12 @@
 import { GlassCard } from '@/features/ui/components/GlassCard'
-import { formatDate } from '@/features/forecast/utils/format'
 import type { HoldoutBaselineSummary, RollingWindowPoint } from '../api/types'
-import { formatMetricScore, formatPercentScore, formatSignedDelta } from '../utils/format'
+import {
+  formatMetricScore,
+  formatMonitorDate,
+  formatPercentScore,
+  formatSignedDelta,
+  formatSignedPercentDelta,
+} from '../utils/format'
 
 interface MonitorBaselineComparisonProps {
   baseline: HoldoutBaselineSummary | null
@@ -22,6 +27,9 @@ function ComparisonRow({
   asPercent?: boolean
 }) {
   const fmt = asPercent ? formatPercentScore : formatMetricScore
+  const deltaText = asPercent
+    ? formatSignedPercentDelta(delta)
+    : formatSignedDelta(delta)
   return (
     <tr className="border-t border-white/[0.04]">
       <th scope="row" className="py-3 pr-4 text-left text-sm font-medium text-slate-300">
@@ -31,9 +39,7 @@ function ComparisonRow({
         {fmt(baseline)}
       </td>
       <td className="py-3 pr-4 text-right text-sm tabular-nums text-white">{fmt(latest)}</td>
-      <td className="py-3 text-right text-sm tabular-nums text-slate-300">
-        {formatSignedDelta(delta)}
-      </td>
+      <td className="py-3 text-right text-sm tabular-nums text-slate-300">{deltaText}</td>
     </tr>
   )
 }
@@ -49,10 +55,10 @@ export function MonitorBaselineComparison({
       </p>
       <h2 className="mt-1 text-xl font-semibold text-white">Holdout comparison</h2>
       <p className="mt-2 text-sm text-slate-400">
-        {baseline
+            {baseline
           ? `Original chronological holdout${
               baseline.test_period_start && baseline.test_period_end
-                ? ` (${formatDate(baseline.test_period_start)} – ${formatDate(baseline.test_period_end)})`
+                ? ` (${formatMonitorDate(baseline.test_period_start)} – ${formatMonitorDate(baseline.test_period_end)})`
                 : ''
             }.`
           : 'Holdout baseline metrics are unavailable for this selection.'}

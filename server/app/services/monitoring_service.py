@@ -1,13 +1,15 @@
 """Model Health and Drift Center service.
 
-Combines rolling walk-forward performance and feature-drift PSI into a single
-typed monitoring payload for ``GET /api/v1/model/monitoring``.
+Combines chronological holdout out-of-sample performance and feature-drift PSI
+into a single typed monitoring payload for ``GET /api/v1/model/monitoring``.
 
 Design notes
 ------------
 * Reuses :mod:`app.ml.monitoring` calculations — no duplicate metric math.
 * Soft failures return ``available: false`` with a machine-readable ``reason``
   rather than fabricating health scores or raising 5xx for missing artifacts.
+* When rolling performance is available but feature drift is not, the payload
+  remains available with ``feature_drift: null`` and a truthful reason note.
 * Overall status is the worst meaningful performance or feature-drift signal
   using the centralized thresholds in ``MONITORING_THRESHOLDS``.
 """
@@ -125,61 +127,68 @@ class MonitoringService:
                 reason=str(rolling.get("reason") or "walk_forward_artifact_missing"),
                 detail=str(
                     rolling.get("detail")
-                    or "Walk-forward monitoring artifacts are unavailable."
+                    or "Out-of-sample monitoring artifacts are unavailable."
                 ),
             )
 
         drift = get_feature_drift(windows=(window,), horizons=(horizon_days,))
-        if not drift.get("available"):
-            return _unavailable(
-                horizon=horizon,
-                horizon_days=horizon_days,
-                window=window,
-                reason=str(drift.get("reason") or "monitoring_reference_missing"),
-                detail=str(
-                    drift.get("detail")
-                    or "Feature-drift monitoring artifacts are unavailable."
-                ),
-            )
+        drift_available = bool(drift.get("available"))
+        drift_reason = str(drift.get("reason") or "monitoring_reference_missing")
+        drift_detail = str(
+            drift.get("detail") or "Feature-drift monitoring artifacts are unavailable."
+        )
 
         horizon_key = horizon
         rolling_horizon = (rolling.get("horizons") or {}).get(horizon_key) or {}
         rolling_window = (rolling_horizon.get("windows") or {}).get(str(window)) or {}
         baseline = rolling_horizon.get("baseline")
+        rolling_sufficient = bool(rolling_window.get("sufficient"))
 
-        drift_horizon = (drift.get("horizons") or {}).get(horizon_key) or {}
-        if not drift_horizon.get("available", True):
-            return _unavailable(
-                horizon=horizon,
-                horizon_days=horizon_days,
-                window=window,
-                reason=str(
+        drift_horizon: dict[str, Any] = {}
+        drift_window: dict[str, Any] = {}
+        if drift_available:
+            drift_horizon = (drift.get("horizons") or {}).get(horizon_key) or {}
+            if not drift_horizon.get("available", True):
+                drift_available = False
+                drift_reason = str(
                     drift_horizon.get("reason") or "monitoring_reference_horizon_missing"
-                ),
-                detail=str(
+                )
+                drift_detail = str(
                     drift_horizon.get("detail")
                     or f"No feature-drift reference for horizon {horizon_key}."
-                ),
-            )
-        drift_window = (drift_horizon.get("windows") or {}).get(str(window)) or {}
+                )
+            else:
+                drift_window = (drift_horizon.get("windows") or {}).get(str(window)) or {}
 
-        rolling_sufficient = bool(rolling_window.get("sufficient"))
-        drift_sufficient = bool(drift_window.get("sufficient"))
+        drift_sufficient = bool(drift_window.get("sufficient")) if drift_available else False
+
         if not rolling_sufficient and not drift_sufficient:
+            # If drift artifacts are missing entirely, prefer that reason when
+            # rolling itself simply lacks enough rows for the selected window.
+            if not drift_available and not rolling_sufficient:
+                return _unavailable(
+                    horizon=horizon,
+                    horizon_days=horizon_days,
+                    window=window,
+                    reason=drift_reason,
+                    detail=drift_detail,
+                )
             return _unavailable(
                 horizon=horizon,
                 horizon_days=horizon_days,
                 window=window,
                 reason="insufficient_observations",
                 detail=(
-                    f"Need at least {window} complete walk-forward and feature rows "
+                    f"Need at least {window} complete out-of-sample and feature rows "
                     "to classify model health for this selection."
                 ),
             )
 
         latest = rolling_window.get("latest") if rolling_sufficient else None
         series = list(rolling_window.get("series") or []) if rolling_sufficient else []
-        feature_scores = list(drift_window.get("features") or []) if drift_sufficient else []
+        feature_scores = (
+            list(drift_window.get("features") or []) if drift_sufficient else []
+        )
         ranked = rank_feature_drift(feature_scores)
 
         signals = performance_health_signals(latest) + feature_drift_health_signals(ranked)
@@ -193,11 +202,16 @@ class MonitoringService:
                 detail=status_explanation,
             )
 
-        metrics_payload = load_metrics_baseline()
-        try:
-            reference_payload = load_monitoring_reference()
-        except MonitoringError:
-            reference_payload = None
+        if not drift_available:
+            status_reasons = [
+                *status_reasons,
+                {
+                    "source": "feature_drift",
+                    "code": drift_reason,
+                    "status": "insufficient_data",
+                    "detail": drift_detail,
+                },
+            ]
 
         confidence = confidence_vs_accuracy_summary(latest)
         feature_status_counts = drift_window.get("status_counts") or {
@@ -206,6 +220,36 @@ class MonitoringService:
             "drift_detected": 0,
             "insufficient_data": 0,
         }
+
+        feature_drift_block = None
+        if drift_available and drift_sufficient:
+            feature_drift_block = {
+                "ranked": ranked,
+                "status_counts": feature_status_counts,
+                "start_date": drift_window.get("start_date"),
+                "end_date": drift_window.get("end_date"),
+                "train_start": drift_horizon.get("train_start"),
+                "train_end": drift_horizon.get("train_end"),
+                "feature_schema_fingerprint": drift.get("feature_schema_fingerprint"),
+            }
+        elif drift_available and not drift_sufficient:
+            feature_drift_block = {
+                "ranked": [],
+                "status_counts": feature_status_counts,
+                "start_date": None,
+                "end_date": None,
+                "train_start": drift_horizon.get("train_start"),
+                "train_end": drift_horizon.get("train_end"),
+                "feature_schema_fingerprint": drift.get("feature_schema_fingerprint"),
+            }
+
+        metrics_payload = load_metrics_baseline()
+        reference_payload = None
+        if drift_available:
+            try:
+                reference_payload = load_monitoring_reference()
+            except MonitoringError:
+                reference_payload = None
 
         return {
             "available": True,
@@ -219,15 +263,7 @@ class MonitoringService:
             "baseline": baseline,
             "rolling_series": series,
             "confidence_vs_accuracy": confidence,
-            "feature_drift": {
-                "ranked": ranked,
-                "status_counts": feature_status_counts,
-                "start_date": drift_window.get("start_date"),
-                "end_date": drift_window.get("end_date"),
-                "train_start": drift_horizon.get("train_start"),
-                "train_end": drift_horizon.get("train_end"),
-                "feature_schema_fingerprint": drift.get("feature_schema_fingerprint"),
-            },
+            "feature_drift": feature_drift_block,
             "observation_counts": {
                 "rolling_window": window,
                 "rolling_available": int(rolling_window.get("n_available") or 0),
@@ -240,7 +276,7 @@ class MonitoringService:
                 "generated_at": _now_iso(),
                 "metrics_generated_at": _artifact_generated_at(metrics_payload),
                 "monitoring_reference_generated_at": _artifact_generated_at(
-                    reference_payload if isinstance(reference_payload, dict) else None
+                    reference_payload
                 ),
                 "rolling_start_date": latest.get("start_date") if latest else None,
                 "rolling_end_date": latest.get("end_date") if latest else None,
@@ -249,8 +285,8 @@ class MonitoringService:
             },
             "model_version": get_model_version(),
             "thresholds": MONITORING_THRESHOLDS,
-            "reason": None,
-            "detail": None,
+            "reason": None if drift_available else drift_reason,
+            "detail": None if drift_available else drift_detail,
         }
 
 

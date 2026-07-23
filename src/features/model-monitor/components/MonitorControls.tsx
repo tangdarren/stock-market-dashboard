@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from 'react'
 import { cn } from '@/lib/utils/cn'
 import {
   MONITORING_HORIZONS,
@@ -6,6 +7,7 @@ import {
   type MonitoringWindow,
 } from '../api/types'
 import { formatHorizonLabel, formatWindowLabel } from '../utils/format'
+import { handleRadioGroupKeyDown } from '../utils/radioGroup'
 
 interface MonitorControlsProps {
   horizon: MonitoringHorizon
@@ -22,9 +24,19 @@ export function MonitorControls({
   onWindowChange,
   disabled = false,
 }: MonitorControlsProps) {
+  const onHorizonKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (disabled) return
+    handleRadioGroupKeyDown(event, MONITORING_HORIZONS, horizon, onHorizonChange)
+  }
+
+  const onWindowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (disabled) return
+    handleRadioGroupKeyDown(event, MONITORING_WINDOWS, window, onWindowChange)
+  }
+
   return (
-    <div className="flex flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
-      <div>
+    <div className="flex flex-col gap-5 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between">
+      <div className="min-w-0">
         <p
           id="monitor-horizon-label"
           className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500"
@@ -34,6 +46,7 @@ export function MonitorControls({
         <div
           role="radiogroup"
           aria-labelledby="monitor-horizon-label"
+          onKeyDown={onHorizonKeyDown}
           className="mt-2 flex flex-wrap gap-2"
         >
           {MONITORING_HORIZONS.map((option) => {
@@ -44,6 +57,7 @@ export function MonitorControls({
                 type="button"
                 role="radio"
                 aria-checked={selected}
+                tabIndex={disabled ? -1 : selected ? 0 : -1}
                 disabled={disabled}
                 onClick={() => onHorizonChange(option)}
                 className={cn(
@@ -62,7 +76,7 @@ export function MonitorControls({
         </div>
       </div>
 
-      <div>
+      <div className="min-w-0">
         <p
           id="monitor-window-label"
           className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500"
@@ -72,7 +86,8 @@ export function MonitorControls({
         <div
           role="radiogroup"
           aria-labelledby="monitor-window-label"
-          className="mt-2 flex flex-wrap gap-2"
+          onKeyDown={onWindowKeyDown}
+          className="mt-2 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap"
         >
           {MONITORING_WINDOWS.map((option) => {
             const selected = option === window
@@ -82,6 +97,7 @@ export function MonitorControls({
                 type="button"
                 role="radio"
                 aria-checked={selected}
+                tabIndex={disabled ? -1 : selected ? 0 : -1}
                 disabled={disabled}
                 onClick={() => onWindowChange(option)}
                 className={cn(

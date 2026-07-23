@@ -7,6 +7,7 @@ training-time ``monitoring_reference.json`` distributions.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -1048,6 +1049,11 @@ def load_monitoring_reference() -> dict[str, Any]:
         raise MonitoringError(
             f"Missing artifact: {MONITORING_REFERENCE_FILENAME}",
             reason="monitoring_reference_missing",
+        ) from exc
+    except (json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise MonitoringError(
+            f"monitoring_reference.json is malformed: {exc}",
+            reason="monitoring_reference_malformed",
         ) from exc
     if not isinstance(payload, dict) or "horizons" not in payload:
         raise MonitoringError(

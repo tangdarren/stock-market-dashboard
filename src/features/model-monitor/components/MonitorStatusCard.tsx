@@ -4,7 +4,9 @@ import type { ModelMonitoringResponse } from '../api/types'
 import {
   formatHorizonLabel,
   formatWindowLabel,
+  humanizeReasonCode,
   overallStatusHeadline,
+  statusGlyph,
   statusLabel,
   statusToneClass,
 } from '../utils/format'
@@ -28,10 +30,12 @@ export function MonitorStatusCard({ data }: MonitorStatusCardProps) {
         </div>
         <span
           className={cn(
-            'inline-flex shrink-0 items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide',
+            'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide',
             statusToneClass(data.status),
           )}
+          aria-label={`Overall status ${statusLabel(data.status)}`}
         >
+          <span aria-hidden>{statusGlyph(data.status)}</span>
           {statusLabel(data.status)}
         </span>
       </div>
@@ -66,7 +70,9 @@ export function MonitorStatusCard({ data }: MonitorStatusCardProps) {
               key={`${reason.source}-${reason.code}-${reason.feature ?? 'none'}`}
               className="rounded-lg border border-white/[0.04] bg-black/20 px-3 py-2 text-xs text-slate-400"
             >
-              <span className="font-medium text-slate-300">{reason.code}</span>
+              <span className="font-medium text-slate-300">
+                {humanizeReasonCode(reason.code)}
+              </span>
               <span className="mx-2 text-slate-600">·</span>
               {reason.detail}
             </li>

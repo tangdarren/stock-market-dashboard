@@ -6,7 +6,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { MainLayout } from '@/app/layouts/MainLayout'
-import { demoModelMonitoringUnavailable } from '@/features/model-monitor/demo/demoResponses'
+import {
+  demoModelMonitoringDrift,
+  demoModelMonitoringUnavailable,
+  demoModelMonitoringWatch,
+} from '@/features/model-monitor/demo/demoResponses'
 import { ENV } from '@/lib/api/env'
 import { ROUTES } from '@/lib/constants/routes'
 import { ModelMonitorPage } from '@/pages/model-monitor/ModelMonitorPage'
@@ -62,6 +66,7 @@ describe('ModelMonitorPage', () => {
     expect(
       screen.getByText(/not a trading recommendation/i),
     ).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Overall status Stable$/i)).toBeInTheDocument()
   })
 
   it('lets users switch the rolling performance metric', async () => {
@@ -88,8 +93,42 @@ describe('ModelMonitorPage', () => {
     ).toHaveAttribute('aria-checked', 'true')
   })
 
+  it('supports keyboard navigation across horizon and metric radiogroups', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ModelMonitorPage />, [ROUTES.MONITOR])
+
+    expect(
+      await screen.findByRole('heading', { name: /model health is stable/i }),
+    ).toBeInTheDocument()
+
+    const horizonGroup = screen.getByRole('radiogroup', { name: /forecast horizon/i })
+    const oneDay = within(horizonGroup).getByRole('radio', { name: /1-day/i })
+    oneDay.focus()
+    await user.keyboard('{ArrowRight}')
+    await waitFor(() => {
+      expect(within(horizonGroup).getByRole('radio', { name: /5-day/i })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      )
+    })
+
+    const metricGroup = screen.getByRole('radiogroup', {
+      name: /rolling performance metric/i,
+    })
+    within(metricGroup).getByRole('radio', { name: /accuracy/i }).focus()
+    await user.keyboard('{ArrowRight}')
+    expect(
+      within(metricGroup).getByRole('radio', { name: /brier score/i }),
+    ).toHaveAttribute('aria-checked', 'true')
+  })
+
   it('reveals plain-English feature drift explanations', async () => {
     const user = userEvent.setup()
+    server.use(
+      http.get(`${base}/model/monitoring`, () =>
+        HttpResponse.json(demoModelMonitoringDrift()),
+      ),
+    )
     renderWithProviders(<ModelMonitorPage />, [ROUTES.MONITOR])
 
     expect(await screen.findByRole('heading', { name: /psi ranking/i })).toBeInTheDocument()
@@ -100,6 +139,7 @@ describe('ModelMonitorPage', () => {
     expect(
       await within(details as HTMLElement).findByText(/drifted versus training/i),
     ).toBeInTheDocument()
+    expect(screen.getByLabelText(/rsi 14 psi/i)).toBeInTheDocument()
   })
 
   it('keeps horizon and window synchronized with the URL query string', async () => {
@@ -146,6 +186,84 @@ describe('ModelMonitorPage', () => {
       'aria-checked',
       'true',
     )
+  })
+
+  it('persists the 252-session window in the URL', async () => {
+    const user = userEvent.setup()
+    renderMonitorRoute([ROUTES.MONITOR])
+
+    expect(
+      await screen.findByRole('heading', { name: /model health is stable/i }),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('radio', { name: /252-session/i }))
+    await waitFor(() => {
+      expect(screen.getByText(/\?horizon=1d&window=252/i)).toBeInTheDocument()
+    })
+  })
+
+  it('renders watch status messaging and confidence gap copy', async () => {
+    server.use(
+      http.get(`${base}/model/monitoring`, () =>
+        HttpResponse.json(demoModelMonitoringWatch()),
+      ),
+    )
+
+    renderWithProviders(<ModelMonitorPage />, [ROUTES.MONITOR])
+
+    expect(
+      await screen.findByRole('heading', { name: /model health needs attention/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Overall status Watch$/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/overconfident/i).length).toBeGreaterThan(0)
+  })
+
+  it('renders drift-detected status from feature PSI', async () => {
+    server.use(
+      http.get(`${base}/model/monitoring`, () =>
+        HttpResponse.json(demoModelMonitoringDrift()),
+      ),
+    )
+
+    renderWithProviders(<ModelMonitorPage />, [ROUTES.MONITOR])
+
+    expect(
+      await screen.findByRole('heading', { name: /model drift detected/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText(/^Overall status Drift detected$/i)).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: /why status is drift detected/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows a loading state before monitoring data arrives', async () => {
+    server.use(
+      http.get(`${base}/model/monitoring`, async () => {
+        await new Promise((resolve) => setTimeout(resolve, 80))
+        return HttpResponse.json(demoModelMonitoringWatch())
+      }),
+    )
+
+    renderWithProviders(<ModelMonitorPage />, [ROUTES.MONITOR])
+    expect(screen.getByText(/loading model health/i)).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: /model health needs attention/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows a generic request failure with retry', async () => {
+    server.use(
+      http.get(`${base}/model/monitoring`, () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    )
+
+    renderWithProviders(<ModelMonitorPage />, [ROUTES.MONITOR])
+
+    expect(
+      await screen.findByRole('heading', { name: /monitoring request failed/i }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
   })
 
   it('shows a truthful unavailable state when artifacts are missing', async () => {
