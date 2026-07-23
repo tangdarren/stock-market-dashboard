@@ -507,15 +507,22 @@ def performance_health_signals(latest: dict[str, Any] | None) -> list[dict[str, 
 def feature_drift_health_signals(
     feature_scores: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Promote meaningful feature-drift rows into overall health signals."""
-    signals: list[dict[str, Any]] = []
+    """Promote meaningful feature-drift rows into overall health signals.
+
+    Watch / drift-detected rows are listed individually. Stable rows are
+    collapsed into a single aggregate signal so all-stable drift still
+    yields a classifiable health band without cluttering reasons.
+    """
+    elevated: list[dict[str, Any]] = []
+    stable_count = 0
     for row in feature_scores:
         status = str(row.get("status") or "insufficient_data")
         if status == "insufficient_data":
             continue
         if status == "stable":
+            stable_count += 1
             continue
-        signals.append(
+        elevated.append(
             {
                 "source": "feature_drift",
                 "code": f"psi_{status}",
@@ -525,10 +532,30 @@ def feature_drift_health_signals(
                 "value": row.get("psi"),
                 "threshold_watch": PSI_STABLE_MAX,
                 "threshold_drift": PSI_WATCH_MAX,
-                "detail": row.get("explanation") or f"{row.get('feature')} PSI status={status}.",
+                "detail": row.get("explanation")
+                or f"{row.get('feature')} PSI status={status}.",
             }
         )
-    return signals
+
+    if elevated:
+        return elevated
+    if stable_count <= 0:
+        return []
+    return [
+        {
+            "source": "feature_drift",
+            "code": "feature_drift_all_stable",
+            "status": "stable",
+            "metric": "psi",
+            "value": None,
+            "threshold_watch": PSI_STABLE_MAX,
+            "threshold_drift": PSI_WATCH_MAX,
+            "detail": (
+                f"All {stable_count} scored features remain below the PSI watch "
+                f"threshold (PSI<{PSI_STABLE_MAX:.2f})."
+            ),
+        }
+    ]
 
 
 def derive_overall_health(
@@ -553,6 +580,34 @@ def derive_overall_health(
     # Keep stable drivers out of the reason list when overall is stable; still
     # surface the top performance/drift cues that explain the band.
     if overall == "stable":
+        has_performance = any(s.get("source") == "performance" for s in meaningful)
+        drift_only_stable = (
+            not has_performance
+            and any(s.get("code") == "feature_drift_all_stable" for s in meaningful)
+        )
+        if drift_only_stable:
+            lead = next(
+                s for s in meaningful if s.get("code") == "feature_drift_all_stable"
+            )
+            reasons = [
+                {
+                    "source": "aggregate",
+                    "code": "feature_drift_all_stable",
+                    "status": "stable",
+                    "detail": lead.get("detail")
+                    or (
+                        "All scored features remain below the PSI watch threshold; "
+                        "rolling performance lacked enough observations for this window."
+                    ),
+                }
+            ]
+            explanation = (
+                "Model health looks stable for the selected horizon and window: "
+                "scored feature distributions stay within watch thresholds "
+                "(rolling performance lacked enough observations for this window)."
+            )
+            return overall, reasons, explanation
+
         reasons = [
             {
                 "source": "aggregate",

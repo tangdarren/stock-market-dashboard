@@ -16,6 +16,7 @@ from app.ml.monitoring import (
     PSI_WATCH_MAX,
     assemble_monitoring_reference,
     derive_overall_health,
+    feature_drift_health_signals,
     performance_health_signals,
 )
 from app.ml.schemas import ModelMonitoringResponse
@@ -163,10 +164,165 @@ def test_performance_health_signals_use_central_thresholds():
     assert by_code["confidence_vs_actual_accuracy"]["status"] == "drift_detected"
 
 
+def test_feature_drift_health_signals_collapses_all_stable():
+    signals = feature_drift_health_signals(
+        [
+            {
+                "feature": "rsi_14",
+                "psi": 0.02,
+                "status": "stable",
+                "explanation": "stable",
+            },
+            {
+                "feature": "macd",
+                "psi": 0.01,
+                "status": "stable",
+                "explanation": "stable",
+            },
+        ]
+    )
+    assert len(signals) == 1
+    assert signals[0]["code"] == "feature_drift_all_stable"
+    assert signals[0]["status"] == "stable"
+    status, reasons, explanation = derive_overall_health(signals)
+    assert status == "stable"
+    assert reasons[0]["code"] == "feature_drift_all_stable"
+    assert "feature distributions" in explanation
+    assert "rolling performance lacked" in explanation
+
+
+def test_feature_drift_health_signals_keeps_elevated_rows():
+    signals = feature_drift_health_signals(
+        [
+            {
+                "feature": "rsi_14",
+                "psi": 0.02,
+                "status": "stable",
+                "explanation": "stable",
+            },
+            {
+                "feature": "macd",
+                "psi": 0.18,
+                "status": "watch",
+                "explanation": "watch",
+            },
+            {
+                "feature": "return_5d",
+                "psi": 0.40,
+                "status": "drift_detected",
+                "explanation": "drifted",
+            },
+        ]
+    )
+    assert [s["status"] for s in signals] == ["watch", "drift_detected"]
+    assert all(s["code"].startswith("psi_") for s in signals)
+
+
 # ---------------------------------------------------------------------------
 # Service unavailable states
 # ---------------------------------------------------------------------------
 
+
+def _insufficient_rolling_payload(*, window: int = 30, n_available: int = 10) -> dict:
+    return {
+        "available": True,
+        "horizons": {
+            "1d": {
+                "baseline": {
+                    "accuracy": 0.55,
+                    "brier": 0.24,
+                    "ece": None,
+                    "average_predicted_confidence": None,
+                    "actual_accuracy": 0.55,
+                    "n_observations": 200,
+                    "test_period_start": "2024-01-02",
+                    "test_period_end": "2024-12-31",
+                },
+                "windows": {
+                    str(window): {
+                        "sufficient": False,
+                        "n_available": n_available,
+                        "series": [],
+                        "latest": None,
+                    }
+                },
+            }
+        },
+    }
+
+
+def _feature_score(
+    feature: str,
+    *,
+    status: str,
+    psi: float | None,
+) -> dict:
+    return {
+        "feature": feature,
+        "psi": psi,
+        "status": status,
+        "recent": {"mean": 0.1, "std": 0.2, "n_valid": 30},
+        "reference": {"mean": 0.0, "std": 0.2, "n_valid": 100},
+        "explanation": f"{feature} status={status}",
+    }
+
+
+def _drift_payload(
+    *,
+    window: int = 30,
+    features: list[dict],
+    sufficient: bool = True,
+    n_available: int = 40,
+) -> dict:
+    counts = {
+        "stable": 0,
+        "watch": 0,
+        "drift_detected": 0,
+        "insufficient_data": 0,
+    }
+    for row in features:
+        counts[str(row["status"])] = counts.get(str(row["status"]), 0) + 1
+    return {
+        "available": True,
+        "feature_schema_fingerprint": "test-fp",
+        "horizons": {
+            "1d": {
+                "available": True,
+                "train_start": "2020-01-02",
+                "train_end": "2023-01-02",
+                "windows": {
+                    str(window): {
+                        "sufficient": sufficient,
+                        "n_available": n_available,
+                        "n_scored": window if sufficient else 0,
+                        "start_date": "2024-06-01" if sufficient else None,
+                        "end_date": "2024-07-15" if sufficient else None,
+                        "status_counts": counts,
+                        "features": features if sufficient else [],
+                    }
+                },
+            }
+        },
+    }
+
+
+def _patch_monitoring_sources(monkeypatch, *, rolling: dict, drift: dict) -> None:
+    monkeypatch.setattr(
+        "app.services.monitoring_service.get_rolling_model_performance",
+        lambda **_kwargs: rolling,
+    )
+    monkeypatch.setattr(
+        "app.services.monitoring_service.get_feature_drift",
+        lambda **_kwargs: drift,
+    )
+    monkeypatch.setattr(
+        "app.services.monitoring_service.load_metrics_baseline",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "app.services.monitoring_service.get_model_version",
+        lambda: "v1-test",
+    )
 
 def test_service_unavailable_without_walk_forward(tmp_path, monkeypatch):
     from app import config as config_module
@@ -225,6 +381,89 @@ def test_service_unavailable_for_insufficient_window(tmp_path, monkeypatch):
     payload = MonitoringService().get_monitoring(horizon="1d", window=252)
     assert payload["available"] is False
     assert payload["reason"] == "insufficient_observations"
+    ModelMonitoringResponse.model_validate(payload)
+
+
+def test_service_available_when_rolling_insufficient_but_feature_drift_stable(monkeypatch):
+    _patch_monitoring_sources(
+        monkeypatch,
+        rolling=_insufficient_rolling_payload(),
+        drift=_drift_payload(
+            features=[
+                _feature_score("rsi_14", status="stable", psi=0.02),
+                _feature_score("macd", status="stable", psi=0.03),
+            ]
+        ),
+    )
+
+    payload = MonitoringService().get_monitoring(horizon="1d", window=30)
+    assert payload["available"] is True
+    assert payload["status"] == "stable"
+    assert payload["latest_performance"] is None
+    assert payload["feature_drift"] is not None
+    assert payload["feature_drift"]["status_counts"]["stable"] == 2
+    assert any(r["code"] == "feature_drift_all_stable" for r in payload["status_reasons"])
+    assert "rolling performance lacked" in payload["status_explanation"]
+    ModelMonitoringResponse.model_validate(payload)
+
+
+def test_service_available_when_rolling_insufficient_but_feature_drift_watch(monkeypatch):
+    _patch_monitoring_sources(
+        monkeypatch,
+        rolling=_insufficient_rolling_payload(),
+        drift=_drift_payload(
+            features=[
+                _feature_score("rsi_14", status="stable", psi=0.02),
+                _feature_score("macd", status="watch", psi=0.18),
+            ]
+        ),
+    )
+
+    payload = MonitoringService().get_monitoring(horizon="1d", window=30)
+    assert payload["available"] is True
+    assert payload["status"] == "watch"
+    assert payload["latest_performance"] is None
+    assert any(r["code"] == "psi_watch" for r in payload["status_reasons"])
+    ModelMonitoringResponse.model_validate(payload)
+
+
+def test_service_available_when_rolling_insufficient_but_feature_drift_detected(
+    monkeypatch,
+):
+    _patch_monitoring_sources(
+        monkeypatch,
+        rolling=_insufficient_rolling_payload(),
+        drift=_drift_payload(
+            features=[
+                _feature_score("rsi_14", status="watch", psi=0.15),
+                _feature_score("macd", status="drift_detected", psi=0.40),
+            ]
+        ),
+    )
+
+    payload = MonitoringService().get_monitoring(horizon="1d", window=30)
+    assert payload["available"] is True
+    assert payload["status"] == "drift_detected"
+    assert payload["latest_performance"] is None
+    assert any(r["code"] == "psi_drift_detected" for r in payload["status_reasons"])
+    ModelMonitoringResponse.model_validate(payload)
+
+
+def test_service_unavailable_when_rolling_and_feature_drift_insufficient(monkeypatch):
+    _patch_monitoring_sources(
+        monkeypatch,
+        rolling=_insufficient_rolling_payload(window=30, n_available=5),
+        drift=_drift_payload(
+            features=[],
+            sufficient=False,
+            n_available=5,
+        ),
+    )
+
+    payload = MonitoringService().get_monitoring(horizon="1d", window=30)
+    assert payload["available"] is False
+    assert payload["reason"] == "insufficient_observations"
+    assert payload["status"] is None
     ModelMonitoringResponse.model_validate(payload)
 
 
