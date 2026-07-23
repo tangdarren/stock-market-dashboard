@@ -8,6 +8,9 @@ Design notes
 * Reuses :mod:`app.ml.monitoring` calculations — no duplicate metric math.
 * Soft failures return ``available: false`` with a machine-readable ``reason``
   rather than fabricating health scores or raising 5xx for missing artifacts.
+* When the selected rolling window lacks enough observations, the top-level
+  reason is ``insufficient_observations`` even if drift artifacts are also
+  missing (those remain secondary ``status_reasons`` / detail).
 * When rolling performance is available but feature drift is not, the payload
   remains available with ``feature_drift: null`` and a truthful reason note.
 * Overall status is the worst meaningful performance or feature-drift signal
@@ -70,12 +73,13 @@ def _unavailable(
     window: int,
     reason: str,
     detail: str,
+    status_reasons: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "available": False,
         "status": None,
         "status_explanation": detail,
-        "status_reasons": [],
+        "status_reasons": list(status_reasons or []),
         "horizon": horizon,
         "horizon_days": horizon_days,
         "window": window,
@@ -163,26 +167,48 @@ class MonitoringService:
         drift_sufficient = bool(drift_window.get("sufficient")) if drift_available else False
 
         if not rolling_sufficient and not drift_sufficient:
-            # If drift artifacts are missing entirely, prefer that reason when
-            # rolling itself simply lacks enough rows for the selected window.
-            if not drift_available and not rolling_sufficient:
-                return _unavailable(
-                    horizon=horizon,
-                    horizon_days=horizon_days,
-                    window=window,
-                    reason=drift_reason,
-                    detail=drift_detail,
+            # Rolling window insufficiency is the primary classification blocker.
+            # Missing or short drift evidence stays secondary detail when present.
+            detail = (
+                f"Need at least {window} complete out-of-sample observations "
+                "to classify rolling performance for this selection."
+            )
+            secondary_reasons: list[dict[str, Any]] = []
+            if not drift_available:
+                detail = (
+                    f"{detail} Feature-drift artifacts are also unavailable "
+                    f"({drift_reason})."
                 )
-            return _unavailable(
+                secondary_reasons.append(
+                    {
+                        "source": "feature_drift",
+                        "code": drift_reason,
+                        "status": "insufficient_data",
+                        "detail": drift_detail,
+                    }
+                )
+            elif not drift_sufficient:
+                detail = (
+                    f"{detail} Feature-drift scoring also lacks enough complete "
+                    f"rows for a {window}-session window."
+                )
+            payload = _unavailable(
                 horizon=horizon,
                 horizon_days=horizon_days,
                 window=window,
                 reason="insufficient_observations",
-                detail=(
-                    f"Need at least {window} complete out-of-sample and feature rows "
-                    "to classify model health for this selection."
-                ),
+                detail=detail,
+                status_reasons=secondary_reasons,
             )
+            payload["observation_counts"] = {
+                "rolling_window": window,
+                "rolling_available": int(rolling_window.get("n_available") or 0),
+                "rolling_scored": 0,
+                "feature_available": int(drift_window.get("n_available") or 0),
+                "feature_scored": 0,
+                "baseline": (baseline or {}).get("n_observations") if baseline else None,
+            }
+            return payload
 
         latest = rolling_window.get("latest") if rolling_sufficient else None
         series = list(rolling_window.get("series") or []) if rolling_sufficient else []

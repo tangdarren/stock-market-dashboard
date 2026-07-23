@@ -367,6 +367,35 @@ def test_service_soft_degrades_without_monitoring_reference(tmp_path, monkeypatc
     ModelMonitoringResponse.model_validate(payload)
 
 
+def test_service_insufficient_rolling_prefers_observations_over_missing_drift(
+    monkeypatch,
+):
+    """Short rolling windows win over missing drift artifacts for unavailable reason."""
+    _patch_monitoring_sources(
+        monkeypatch,
+        rolling=_insufficient_rolling_payload(window=30, n_available=8),
+        drift={
+            "available": False,
+            "windows": [30],
+            "horizons": {},
+            "feature_schema_fingerprint": None,
+            "psi_thresholds": {},
+            "reason": "monitoring_reference_missing",
+            "detail": "monitoring_reference.json is not present.",
+        },
+    )
+
+    payload = MonitoringService().get_monitoring(horizon="1d", window=30)
+    assert payload["available"] is False
+    assert payload["reason"] == "insufficient_observations"
+    assert "out-of-sample observations" in payload["detail"]
+    assert "monitoring_reference_missing" in payload["detail"]
+    assert any(
+        r.get("code") == "monitoring_reference_missing" for r in payload["status_reasons"]
+    )
+    ModelMonitoringResponse.model_validate(payload)
+
+
 def test_service_unavailable_for_insufficient_window(tmp_path, monkeypatch):
     _seed_monitoring_artifacts(tmp_path, monkeypatch, n_history=500)
     # Tiny walk-forward so rolling windows cannot fill; keep a short market
