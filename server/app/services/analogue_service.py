@@ -96,7 +96,9 @@ class AnalogueService:
         self._market = market_service
         self._cache = cache
 
-    async def get_spy_analogues(self, *, limit: int) -> dict[str, Any]:
+    async def get_spy_analogues(
+        self, *, limit: int, simulated: bool = False
+    ) -> dict[str, Any]:
         """Return the top-``limit`` analogues for the latest completed SPY session.
 
         Never raises for expected failure modes (missing history, missing
@@ -109,12 +111,8 @@ class AnalogueService:
                 f"limit must be between {MIN_LIMIT} and {MAX_LIMIT}, got {limit}"
             )
 
-        # (1) Reuse the shared market snapshot. If the cache is fresh no
-        # Alpha Vantage HTTP request happens; if no API key is set, a cached
-        # payload is returned in "cached" mode; otherwise the service raises
-        # MarketDataUnavailable and we produce a structured unavailable response.
         try:
-            market = await self._market.get_spy_daily()
+            market = await self._market.get_spy_daily(simulated=simulated)
         except MarketDataUnavailable as exc:
             return _unavailable(
                 reason="market_data_unavailable",
@@ -136,10 +134,7 @@ class AnalogueService:
                 mode="unavailable",
             )
 
-        # (2) Cache short-circuit. Analogues for a given (session, schema, limit)
-        # are immutable, so we serve the cached core payload and overlay the
-        # current market mode/data_as_of + cache_status at read time.
-        cache_key = _cache_key(features_as_of, limit)
+        cache_key = _cache_key(features_as_of, limit, simulated=simulated)
         cached_entry = self._cache.get(cache_key)
         if cached_entry is not None and cached_entry.is_fresh:
             return _finalize_payload(
@@ -149,10 +144,8 @@ class AnalogueService:
                 cache_status="hit",
             )
 
-        # (3) Load the trusted local dataset. All soft failures below funnel
-        # through _AnalogueUnavailable so we never leak a stack trace.
         try:
-            historical = _load_historical_features()
+            historical = _load_historical_features(simulated=simulated)
             query_row = _build_query_row(market)
             result = find_historical_analogues(
                 historical,
@@ -170,9 +163,6 @@ class AnalogueService:
                 mode="unavailable",
             )
         except ValueError as exc:
-            # find_historical_analogues raises ValueError with the offending
-            # column name(s) baked into the message. Surface it as a schema
-            # mismatch rather than a 500.
             logger.warning("Analogue feature schema mismatch: %s", exc)
             return _unavailable(
                 reason="feature_schema_mismatch",
@@ -195,6 +185,11 @@ class AnalogueService:
             )
 
         core = _build_core_payload(result=result, limit=limit, query_date=features_as_of)
+        if simulated:
+            core["source"] = "simulated_workbook"
+            core["data_classification"] = market.get(
+                "data_classification", "SIMULATED / FICTIONAL"
+            )
         self._cache.put(cache_key, core, ANALOGUE_CACHE_TTL_SECONDS)
         return _finalize_payload(
             core, mode=market_mode, data_as_of=data_as_of, cache_status="miss"
@@ -206,12 +201,24 @@ class AnalogueService:
 # ---------------------------------------------------------------------------
 
 
-def _load_historical_features() -> pd.DataFrame:
-    """Read the local SPY dataset, engineer features, and attach realized targets.
+def _load_historical_features(*, simulated: bool = False) -> pd.DataFrame:
+    """Read SPY history, engineer features, and attach realized targets.
 
     Raises :class:`_AnalogueUnavailable` when the dataset is missing, malformed,
     or too small to produce any complete feature rows.
     """
+    if simulated:
+        from app.ml.simulated import SimulatedDataError, get_simulated_workbook
+
+        try:
+            workbook = get_simulated_workbook()
+        except SimulatedDataError as exc:
+            raise _AnalogueUnavailable(exc.message, reason=exc.reason) from exc
+        canonical = workbook.market_data.copy()
+        features = build_features(canonical)
+        with_targets = add_targets(features)
+        return with_targets
+
     csv_path = _config.DATA_RAW_DIR / HISTORICAL_CSV_FILENAME
     if not csv_path.exists():
         raise _AnalogueUnavailable(
@@ -266,8 +273,9 @@ def _build_query_row(market: dict[str, Any]) -> pd.Series:
 # ---------------------------------------------------------------------------
 
 
-def _cache_key(features_as_of: str, limit: int) -> str:
-    return f"analogues:SPY:{features_as_of}:v={FEATURE_SCHEMA_VERSION}:limit={limit}"
+def _cache_key(features_as_of: str, limit: int, *, simulated: bool = False) -> str:
+    prefix = "simulated:analogues" if simulated else "analogues"
+    return f"{prefix}:SPY:{features_as_of}:v={FEATURE_SCHEMA_VERSION}:limit={limit}"
 
 
 def _build_core_payload(

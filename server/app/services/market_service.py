@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 from functools import lru_cache
 from typing import Any
 
+import pandas as pd
 from fastapi import Depends
 
 from app import config as _config
@@ -18,6 +19,11 @@ from app.clients.alpha_vantage import (
 )
 from app.config import Settings, get_settings
 from app.ml.normalize import normalize_alpha_vantage_daily
+from app.ml.simulated import (
+    SIMULATED_DATA_DISCLAIMER,
+    SimulatedDataError,
+    get_simulated_workbook,
+)
 from app.services.cache import TTLCache
 from app.services.rate_limiter import RateLimiter, RateLimitError
 from app.services.session import latest_completed_session
@@ -27,6 +33,8 @@ logger = logging.getLogger(__name__)
 
 SPY_TIMESERIES_CACHE_KEY = "alpha_vantage:time_series_daily:SPY"
 SPY_TIMESERIES_TTL_SECONDS = 6 * 60 * 60  # 6 hours
+SIMULATED_TIMESERIES_CACHE_KEY = "simulated:time_series_daily:SPY"
+SIMULATED_TIMESERIES_TTL_SECONDS = 24 * 60 * 60
 
 
 class MarketDataUnavailable(RuntimeError):
@@ -52,29 +60,70 @@ class MarketService:
     def has_cached_snapshot(self) -> bool:
         return self._cache.get(SPY_TIMESERIES_CACHE_KEY) is not None
 
-    async def get_spy_daily(self) -> dict[str, Any]:
+    async def get_spy_daily(self, *, simulated: bool = False) -> dict[str, Any]:
         """Return the latest completed SPY daily snapshot with metadata.
 
-        Response shape::
-
-            {
-              "series": [{"date": "YYYY-MM-DD", "open": ..., ...}, ...],
-              "latest": {"date": "YYYY-MM-DD", "open": ..., ...},
-              "features_as_of": "YYYY-MM-DD",
-              "data_as_of": "YYYY-MM-DD",
-              "source": "alpha_vantage",
-              "mode": "live" | "cached" | "stale" | "unavailable",
-              "meta": {...cache meta...},
-            }
+        Live Alpha Vantage is the default. Pass ``simulated=True`` to serve the
+        synthetic workbook instead — never used as a silent live fallback.
         """
+        if simulated:
+            return self._get_spy_daily_simulated()
+        return await self._get_spy_daily_live()
+
+    def _get_spy_daily_simulated(self) -> dict[str, Any]:
+        cached = self._cache.get(SIMULATED_TIMESERIES_CACHE_KEY)
+        if cached is not None and cached.is_fresh:
+            payload = dict(cached.payload)
+            payload["cache"] = {
+                "fetchedAt": cached.fetched_at.replace(microsecond=0).isoformat(),
+                "cacheStatus": "hit",
+                "isStale": False,
+            }
+            return payload
+
+        try:
+            workbook = get_simulated_workbook()
+        except SimulatedDataError as exc:
+            raise MarketDataUnavailable(exc.message, reason=exc.reason) from exc
+
+        response = _build_frame_response(
+            workbook.market_data,
+            mode="simulated",
+            is_stale=False,
+            source="simulated_workbook",
+            cache_meta={
+                "fetchedAt": datetime.now(timezone.utc)
+                .replace(microsecond=0)
+                .isoformat(),
+                "cacheStatus": "miss",
+                "isStale": False,
+            },
+            filter_to_completed_session=False,
+        )
+        response["disclaimer"] = workbook.scenario.warning or SIMULATED_DATA_DISCLAIMER
+        response["scenario_name"] = workbook.scenario.scenario_name
+        response["data_classification"] = workbook.scenario.data_classification
+        self._cache.put(
+            SIMULATED_TIMESERIES_CACHE_KEY,
+            {k: v for k, v in response.items() if k != "cache"},
+            SIMULATED_TIMESERIES_TTL_SECONDS,
+        )
+        return response
+
+    async def _get_spy_daily_live(self) -> dict[str, Any]:
         if not self._settings.has_api_key:
             cached = self._cache.get(SPY_TIMESERIES_CACHE_KEY)
             if cached is not None:
-                return self._build_response(cached.payload, mode="cached", is_stale=True, cache_meta={
-                    "fetchedAt": cached.fetched_at.replace(microsecond=0).isoformat(),
-                    "cacheStatus": "hit_no_key",
-                    "isStale": True,
-                })
+                return self._build_response(
+                    cached.payload,
+                    mode="cached",
+                    is_stale=True,
+                    cache_meta={
+                        "fetchedAt": cached.fetched_at.replace(microsecond=0).isoformat(),
+                        "cacheStatus": "hit_no_key",
+                        "isStale": True,
+                    },
+                )
             raise MarketDataUnavailable(
                 "Alpha Vantage API key is not configured.",
                 reason="missing_api_key",
@@ -144,46 +193,69 @@ class MarketService:
         cache_meta: dict[str, Any],
     ) -> dict[str, Any]:
         frame = normalize_alpha_vantage_daily(payload)
-        target_session = latest_completed_session()
+        return _build_frame_response(
+            frame,
+            mode=mode,
+            is_stale=is_stale,
+            source="alpha_vantage",
+            cache_meta=cache_meta,
+            filter_to_completed_session=True,
+        )
 
-        filtered = frame[frame["date"].dt.date <= target_session]
+
+def _build_frame_response(
+    frame: pd.DataFrame,
+    *,
+    mode: str,
+    is_stale: bool,
+    source: str,
+    cache_meta: dict[str, Any],
+    filter_to_completed_session: bool,
+) -> dict[str, Any]:
+    working = frame.copy()
+    working["date"] = pd.to_datetime(working["date"])
+    target_session = latest_completed_session()
+
+    filtered = working
+    if filter_to_completed_session:
+        filtered = working[working["date"].dt.date <= target_session]
         if filtered.empty:
-            filtered = frame  # nothing matches (weekend before first bar?) — fall back gracefully
+            filtered = working
 
-        data_as_of: date = filtered["date"].iloc[-1].date()
-        features_as_of = data_as_of  # inference and features share the same "as-of" bar.
+    data_as_of: date = filtered["date"].iloc[-1].date()
+    features_as_of = data_as_of
 
-        if data_as_of < target_session:
-            mode = "stale"
-            is_stale = True
+    if filter_to_completed_session and data_as_of < target_session:
+        mode = "stale"
+        is_stale = True
 
-        series = filtered.tail(180).to_dict(orient="records")
-        for row in series:
-            row["date"] = row["date"].strftime("%Y-%m-%d")
+    series = filtered.tail(180).to_dict(orient="records")
+    for row in series:
+        row["date"] = row["date"].strftime("%Y-%m-%d")
 
-        latest = series[-1] if series else None
-        previous = series[-2] if len(series) >= 2 else None
+    latest = series[-1] if series else None
+    previous = series[-2] if len(series) >= 2 else None
 
-        change = None
-        change_percent = None
-        if latest is not None and previous is not None:
-            change = float(latest["close"] - previous["close"])
-            change_percent = float(change / previous["close"] * 100)
+    change = None
+    change_percent = None
+    if latest is not None and previous is not None:
+        change = float(latest["close"] - previous["close"])
+        change_percent = float(change / previous["close"] * 100)
 
-        return {
-            "series": series,
-            "latest": latest,
-            "previous": previous,
-            "change": change,
-            "change_percent": change_percent,
-            "features_as_of": features_as_of.isoformat(),
-            "data_as_of": data_as_of.isoformat(),
-            "target_session": target_session.isoformat(),
-            "source": "alpha_vantage",
-            "mode": mode,
-            "is_stale": is_stale,
-            "cache": cache_meta,
-        }
+    return {
+        "series": series,
+        "latest": latest,
+        "previous": previous,
+        "change": change,
+        "change_percent": change_percent,
+        "features_as_of": features_as_of.isoformat(),
+        "data_as_of": data_as_of.isoformat(),
+        "target_session": target_session.isoformat(),
+        "source": source,
+        "mode": mode,
+        "is_stale": is_stale,
+        "cache": cache_meta,
+    }
 
 
 @lru_cache(maxsize=1)

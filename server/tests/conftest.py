@@ -48,6 +48,10 @@ def _isolate_settings(tmp_path, monkeypatch):
 
     replay_service.clear_replay_file_caches()
 
+    from app.ml import simulated as simulated_module
+
+    simulated_module.clear_simulated_workbook_cache()
+
     yield
 
     market_service._default_database.cache_clear()
@@ -55,6 +59,7 @@ def _isolate_settings(tmp_path, monkeypatch):
     market_service._default_rate_limiter.cache_clear()
     config_module.get_settings.cache_clear()
     replay_service.clear_replay_file_caches()
+    simulated_module.clear_simulated_workbook_cache()
 
 
 @pytest.fixture

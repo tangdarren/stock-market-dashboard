@@ -269,8 +269,8 @@ def test_feature_schema_mismatch_is_sanitized(with_configured_key, monkeypatch):
 
     original_loader = svc._load_historical_features
 
-    def _broken_loader() -> pd.DataFrame:
-        df = original_loader()
+    def _broken_loader(*, simulated: bool = False) -> pd.DataFrame:
+        df = original_loader(simulated=simulated)
         return df.drop(columns=["rsi_14"])
 
     monkeypatch.setattr(svc, "_load_historical_features", _broken_loader)

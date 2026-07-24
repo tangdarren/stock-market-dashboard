@@ -43,7 +43,7 @@ class ForecastResponse(BaseModel):
     five_day: HorizonForecast | None
     features_as_of: str
     data_as_of: str
-    mode: Literal["live", "cached", "stale", "demo", "model_unavailable"]
+    mode: Literal["live", "cached", "stale", "demo", "simulated", "model_unavailable"]
     disclaimer: str
     model_unavailable: bool = False
     reason: str | None = None

@@ -57,7 +57,7 @@ class ForecastService:
                 return False
         return True
 
-    async def forecast(self) -> dict[str, Any]:
+    async def forecast(self, *, simulated: bool = False) -> dict[str, Any]:
         """Return forecasts for 1d and 5d horizons plus metadata + disclaimer."""
         try:
             models = {horizon: load_model(horizon) for horizon in (1, 5)}
@@ -68,7 +68,7 @@ class ForecastService:
             return _unavailable_response(str(exc))
 
         try:
-            market = await self._market.get_spy_daily()
+            market = await self._market.get_spy_daily(simulated=simulated)
         except Exception as exc:
             logger.warning("Market data unavailable during forecast: %s", exc)
             return _unavailable_response(f"Market data unavailable: {exc}")
@@ -88,7 +88,7 @@ class ForecastService:
         for horizon, loaded in models.items():
             forecasts[f"{horizon}d"] = self._forecast_one(loaded, current, features_as_of)
 
-        return {
+        payload = {
             "one_day": forecasts["1d"],
             "five_day": forecasts["5d"],
             "features_as_of": features_as_of,
@@ -98,6 +98,15 @@ class ForecastService:
             "disclaimer": DISCLAIMER,
             "model_unavailable": False,
         }
+        if simulated or market.get("mode") == "simulated":
+            payload["source"] = market.get("source", "simulated_workbook")
+            payload["data_classification"] = market.get(
+                "data_classification", "SIMULATED / FICTIONAL"
+            )
+            if market.get("disclaimer"):
+                payload["simulated_disclaimer"] = market["disclaimer"]
+        return payload
+
 
     def _forecast_one(
         self,
@@ -190,7 +199,31 @@ def get_metrics_payload() -> dict[str, Any] | None:
         return None
 
 
-def get_walk_forward_records(limit: int | None = 30) -> list[dict[str, Any]]:
+def get_walk_forward_records(
+    limit: int | None = 30,
+    *,
+    simulated: bool = False,
+) -> list[dict[str, Any]]:
+    if simulated:
+        from app.ml.simulated import SimulatedDataError, get_simulated_workbook
+
+        try:
+            workbook = get_simulated_workbook()
+        except SimulatedDataError:
+            return []
+        df = workbook.forecast_history.copy()
+        df = df.sort_values("date", ascending=False)
+        if limit is not None:
+            df = df.head(limit)
+        df = df.sort_values("date")
+        records = df.to_dict(orient="records")
+        for row in records:
+            if hasattr(row.get("date"), "strftime"):
+                row["date"] = row["date"].strftime("%Y-%m-%d")
+            else:
+                row["date"] = str(row["date"])[:10]
+        return records
+
     path = _config.ARTIFACTS_DIR / "walk_forward_predictions.csv"
     if not path.exists():
         return []

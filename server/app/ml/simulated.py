@@ -9,6 +9,7 @@ to this module.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
@@ -181,6 +182,23 @@ def load_simulated_workbook(path: Path | str | None = None) -> SimulatedWorkbook
         data_dictionary=dictionary,
         source_path=workbook_path.resolve(),
     )
+
+
+@lru_cache(maxsize=4)
+def _cached_simulated_workbook(resolved_path: str) -> SimulatedWorkbook:
+    return load_simulated_workbook(Path(resolved_path))
+
+
+def get_simulated_workbook(path: Path | str | None = None) -> SimulatedWorkbook:
+    """Return a process-cached workbook for explicit simulated-mode callers."""
+    workbook_path = Path(path) if path is not None else default_workbook_path()
+    return _cached_simulated_workbook(str(workbook_path.resolve()))
+
+
+def clear_simulated_workbook_cache() -> None:
+    """Drop cached workbook instances (used by tests)."""
+    _cached_simulated_workbook.cache_clear()
+
 
 
 def _format_date(value: Any) -> str | None:
@@ -483,6 +501,8 @@ __all__ = [
     "SimulatedNewsItem",
     "SimulatedScenarioMeta",
     "SimulatedWorkbook",
+    "clear_simulated_workbook_cache",
     "default_workbook_path",
+    "get_simulated_workbook",
     "load_simulated_workbook",
 ]

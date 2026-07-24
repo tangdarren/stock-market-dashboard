@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.api.deps import simulated_query
 from app.services.analogue_service import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -26,14 +27,22 @@ router = APIRouter(prefix="/market", tags=["market"])
 async def get_spy_market(
     market_service: MarketService = Depends(get_market_service),
     refresh: bool = Query(default=False),
+    simulated: bool = Depends(simulated_query),
 ) -> dict[str, Any]:
     """Latest completed SPY daily snapshot plus recent series and cache metadata."""
-    if refresh:
+    if refresh and not simulated:
         from app.services.market_service import SPY_TIMESERIES_CACHE_KEY, _default_cache
 
         _default_cache().delete(SPY_TIMESERIES_CACHE_KEY)
+    if refresh and simulated:
+        from app.services.market_service import (
+            SIMULATED_TIMESERIES_CACHE_KEY,
+            _default_cache,
+        )
+
+        _default_cache().delete(SIMULATED_TIMESERIES_CACHE_KEY)
     try:
-        return await market_service.get_spy_daily()
+        return await market_service.get_spy_daily(simulated=simulated)
     except MarketDataUnavailable as exc:
         raise HTTPException(
             status_code=503,
@@ -49,6 +58,7 @@ async def get_spy_market(
 async def get_spy_analogues(
     analogue_service: AnalogueService = Depends(get_analogue_service),
     limit: int = Query(default=DEFAULT_LIMIT, ge=MIN_LIMIT, le=MAX_LIMIT),
+    simulated: bool = Depends(simulated_query),
 ) -> dict[str, Any]:
     """Historical SPY sessions most similar to the latest completed session.
 
@@ -58,4 +68,4 @@ async def get_spy_analogues(
     structured ``available: false`` payload rather than a 5xx so this panel
     can degrade gracefully alongside the rest of the dashboard.
     """
-    return await analogue_service.get_spy_analogues(limit=limit)
+    return await analogue_service.get_spy_analogues(limit=limit, simulated=simulated)
