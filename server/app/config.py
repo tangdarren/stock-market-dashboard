@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 SERVER_ROOT = Path(__file__).resolve().parent.parent
 ARTIFACTS_DIR = SERVER_ROOT / "artifacts"
 DATA_RAW_DIR = SERVER_ROOT / "data" / "raw"
+DATA_SIMULATED_DIR = SERVER_ROOT / "data" / "simulated"
 
 
 class Settings(BaseSettings):
