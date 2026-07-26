@@ -134,6 +134,10 @@ export interface ModelMonitoringResponse {
   thresholds: Record<string, Record<string, number>>
   reason: string | null
   detail: string | null
+  mode?: 'live' | 'simulated' | null
+  source?: string | null
+  disclaimer?: string | null
+  data_classification?: string | null
 }
 
 export interface ModelMonitoringQuery {

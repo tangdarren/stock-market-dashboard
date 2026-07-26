@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { forecastApi } from '../api/forecastApi'
 import { demoAnalogues } from '../demo/demoResponses'
+import { useSimulatedDataMode } from '@/features/simulated/useSimulatedDataMode'
 import { ENV } from '@/lib/api/env'
 import type { AnalogueResponse } from '../api/types'
 
@@ -12,11 +13,13 @@ import type { AnalogueResponse } from '../api/types'
 const THIRTY_MINUTES = 30 * 60 * 1000
 
 export function useSpyAnalogues(limit = 5) {
+  const { enabled: simulated } = useSimulatedDataMode()
+
   return useQuery<AnalogueResponse>({
-    queryKey: ['forecast-analogues', 'spy', limit, ENV.DEMO_MODE],
+    queryKey: ['forecast-analogues', 'spy', limit, ENV.DEMO_MODE, simulated],
     queryFn: async () => {
       if (ENV.DEMO_MODE) return demoAnalogues
-      return forecastApi.spyAnalogues(limit)
+      return forecastApi.spyAnalogues(limit, { simulated })
     },
     staleTime: THIRTY_MINUTES,
     refetchInterval: false,

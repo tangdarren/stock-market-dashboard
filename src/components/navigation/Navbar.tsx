@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
+import { SimulatedDataToggle } from '@/features/simulated/SimulatedDataToggle'
 import { ROUTES } from '@/lib/constants/routes'
 import { cn } from '@/lib/utils/cn'
 
@@ -33,13 +34,16 @@ export function Navbar() {
         scrolled ? 'pointer-events-none -translate-y-4 opacity-0' : 'opacity-100',
       )}
     >
-      <div className="mx-auto flex h-24 max-w-7xl items-center justify-between px-6 lg:px-8">
-        <Link
-          to={ROUTES.HOME}
-          className="font-['Space_Grotesk',system-ui,sans-serif] text-2xl font-bold tracking-[0.12em] text-white transition-colors hover:text-[#00FFB2]"
-        >
-          TEMPEST
-        </Link>
+      <div className="mx-auto flex h-24 max-w-7xl items-center justify-between gap-4 px-6 lg:px-8">
+        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+          <Link
+            to={ROUTES.HOME}
+            className="font-['Space_Grotesk',system-ui,sans-serif] text-2xl font-bold tracking-[0.12em] text-white transition-colors hover:text-[#00FFB2]"
+          >
+            TEMPEST
+          </Link>
+          <SimulatedDataToggle className="shrink-0" />
+        </div>
 
         <nav
           aria-label="Primary"

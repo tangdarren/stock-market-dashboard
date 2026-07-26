@@ -12,6 +12,9 @@ describe('ModeBadge', () => {
     rerender(<ModeBadge mode="stale" />)
     expect(screen.getByText('Stale cache')).toBeInTheDocument()
 
+    rerender(<ModeBadge mode="simulated" />)
+    expect(screen.getByText('Simulated data')).toBeInTheDocument()
+
     rerender(<ModeBadge mode="model_unavailable" />)
     expect(screen.getByText('Model unavailable')).toBeInTheDocument()
 

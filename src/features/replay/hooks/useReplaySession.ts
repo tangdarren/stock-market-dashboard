@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { ENV } from '@/lib/api/env'
+import { useSimulatedDataMode } from '@/features/simulated/useSimulatedDataMode'
 import { replayApi } from '../api/replayApi'
 import type { ReplaySessionRequest, ReplaySessionResponse } from '../api/types'
 import { demoReplaySession } from '../demo/demoResponses'
@@ -8,8 +9,10 @@ import { demoReplaySession } from '../demo/demoResponses'
 const ONE_HOUR = 60 * 60 * 1000
 
 export function useReplaySession(request: ReplaySessionRequest | null) {
+  const { enabled: simulated } = useSimulatedDataMode()
+
   return useQuery<ReplaySessionResponse>({
-    queryKey: ['replay', 'session', request, ENV.DEMO_MODE],
+    queryKey: ['replay', 'session', request, ENV.DEMO_MODE, simulated],
     queryFn: async ({ signal }) => {
       if (!request) {
         throw new Error('Replay session request is required.')
@@ -27,9 +30,9 @@ export function useReplaySession(request: ReplaySessionRequest | null) {
         return demoReplaySession
       }
       if (request.kind === 'random') {
-        return replayApi.randomSession({ signal })
+        return replayApi.randomSession({ signal, simulated })
       }
-      return replayApi.session(request.date, { signal })
+      return replayApi.session(request.date, { signal, simulated })
     },
     enabled: request !== null,
     staleTime: ONE_HOUR,

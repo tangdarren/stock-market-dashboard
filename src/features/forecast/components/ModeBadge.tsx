@@ -10,6 +10,7 @@ const MAP: Record<Mode, { label: string; variant: 'success' | 'info' | 'warning'
   cached: { label: 'Cached', variant: 'info', dot: true },
   stale: { label: 'Stale cache', variant: 'warning', dot: true },
   demo: { label: 'Demo data', variant: 'warning', dot: true },
+  simulated: { label: 'Simulated data', variant: 'info', dot: true },
   model_unavailable: { label: 'Model unavailable', variant: 'danger', dot: false },
   unavailable: { label: 'Backend unavailable', variant: 'danger', dot: false },
 }

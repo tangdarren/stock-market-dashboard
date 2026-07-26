@@ -1,8 +1,17 @@
 import type { ReplayDirection } from '../api/types'
 import type { ReplayForecastHorizon } from '../utils/prediction'
 
-/** localStorage key for versioned replay history. */
+/** localStorage key for versioned replay history (live mode). */
 export const REPLAY_HISTORY_STORAGE_KEY = 'spy-replay-history:v1'
+
+/** Isolated localStorage key for simulated-mode replay attempt history. */
+export const REPLAY_HISTORY_SIMULATED_STORAGE_KEY = 'spy-replay-history:v1:simulated'
+
+export function replayHistoryStorageKey(simulated = false): string {
+  return simulated
+    ? REPLAY_HISTORY_SIMULATED_STORAGE_KEY
+    : REPLAY_HISTORY_STORAGE_KEY
+}
 
 /** Schema version stored inside the payload. */
 export const REPLAY_HISTORY_SCHEMA_VERSION = 1 as const

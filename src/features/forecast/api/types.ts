@@ -1,4 +1,12 @@
-export type Mode = 'live' | 'cached' | 'stale' | 'demo' | 'model_unavailable' | 'unavailable'
+export type Mode =
+  | 'live'
+  | 'cached'
+  | 'stale'
+  | 'demo'
+  | 'simulated'
+  | 'model_unavailable'
+  | 'unavailable'
+
 export type Direction = 'up' | 'down'
 export type Confidence = 'low' | 'moderate' | 'high'
 export type ExplanationDirection = 'up' | 'down' | 'uncertainty'

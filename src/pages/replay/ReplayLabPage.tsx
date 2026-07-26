@@ -18,12 +18,18 @@ import { useReplayResult } from '@/features/replay/hooks/useReplayResult'
 import { useReplaySession } from '@/features/replay/hooks/useReplaySession'
 import type { ReplaySessionRequest } from '@/features/replay/api/types'
 import { isValidIsoDate, normalizeDateInput } from '@/features/replay/utils/dateValidation'
+import { useSimulatedDataMode } from '@/features/simulated/useSimulatedDataMode'
 import { BackendUnavailableError } from '@/lib/api/client'
 import { usePageTitle } from '@/hooks/usePageTitle'
 
 export function ReplayLabPage() {
   usePageTitle('Market Replay Lab')
+  const { enabled: simulated } = useSimulatedDataMode()
+  // Remount on mode change so session/prediction/history state cannot leak.
+  return <ReplayLabPageContent key={simulated ? 'simulated' : 'live'} />
+}
 
+function ReplayLabPageContent() {
   // Load a random eligible session on first open.
   const [request, setRequest] = useState<ReplaySessionRequest>({
     kind: 'random',

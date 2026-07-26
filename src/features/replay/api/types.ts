@@ -1,5 +1,6 @@
 export type ReplayDirection = 'up' | 'down'
-export type ReplayMode = 'historical' | 'unavailable'
+export type ReplayMode = 'historical' | 'unavailable' | 'simulated'
+
 
 export interface ReplayChartBar {
   date: string
@@ -25,7 +26,8 @@ export interface ReplayMethodology {
   lookback_sessions: number
   min_feature_history: number
   horizons: number[]
-  prediction_source: 'walk_forward_predictions'
+  prediction_source: 'walk_forward_predictions' | 'simulated_forecast_history'
+
   feature_engineering: string
 }
 
@@ -78,7 +80,8 @@ export interface ReplayResultResponse {
   selected_date: string | null
   one_day: ReplayHorizonOutcome | null
   five_day: ReplayHorizonOutcome | null
-  source: 'walk_forward_predictions'
+  source: 'walk_forward_predictions' | 'simulated_workbook'
+
   evaluation_note: string
   disclaimer: string
   mode: ReplayMode

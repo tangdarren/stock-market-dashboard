@@ -30,5 +30,7 @@ export type {
 } from './types'
 export {
   REPLAY_HISTORY_SCHEMA_VERSION,
+  REPLAY_HISTORY_SIMULATED_STORAGE_KEY,
   REPLAY_HISTORY_STORAGE_KEY,
+  replayHistoryStorageKey,
 } from './types'

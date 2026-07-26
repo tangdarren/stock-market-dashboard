@@ -30,6 +30,7 @@ const VALID_MODES: readonly Mode[] = [
   'cached',
   'stale',
   'demo',
+  'simulated',
   'model_unavailable',
   'unavailable',
 ]
