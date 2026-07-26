@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FadeContent } from '@/features/ui/components/FadeContent'
 import { GlassCard } from '@/features/ui/components/GlassCard'
 import { ReplayIndicatorsPanel } from '@/features/replay/components/ReplayIndicatorsPanel'
@@ -22,6 +22,7 @@ import { useSimulatedDataMode } from '@/features/simulated/useSimulatedDataMode'
 import { SimulatedDataNotice } from '@/features/simulated/SimulatedDataNotice'
 import { BackendUnavailableError } from '@/lib/api/client'
 import { usePageTitle } from '@/hooks/usePageTitle'
+import { cn } from '@/lib/utils/cn'
 
 export function ReplayLabPage() {
   usePageTitle('Market Replay Lab')
@@ -53,6 +54,7 @@ function ReplayLabPageContent({ simulated }: { simulated: boolean }) {
     canRestart,
     canReveal,
     reset,
+    beginConfiguring,
     setHorizon,
     setDirection,
     setConfidence,
@@ -130,6 +132,18 @@ function ReplayLabPageContent({ simulated }: { simulated: boolean }) {
     reset()
   }
 
+  const continueToPrediction = () => {
+    beginConfiguring()
+    const form = document.getElementById('replay-prediction-form')
+    if (form && typeof form.scrollIntoView === 'function') {
+      form.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+    // Defer focus until after scroll/layout so the form receives keyboard focus.
+    requestAnimationFrame(() => {
+      form?.focus({ preventScroll: true })
+    })
+  }
+
   const loadByDate = (rawDate: string) => {
     const date = normalizeDateInput(rawDate)
     if (!isValidIsoDate(date)) {
@@ -174,11 +188,6 @@ function ReplayLabPageContent({ simulated }: { simulated: boolean }) {
 
   const eligibleMin = session?.min_eligible_date ?? null
   const eligibleMax = session?.max_eligible_date ?? null
-
-  const methodologySummary = useMemo(
-    () => session?.methodology?.summary ?? null,
-    [session?.methodology?.summary],
-  )
 
   const resultLoading = resultQuery.isLoading || resultQuery.isFetching
   const showOutcomePanel =
@@ -264,6 +273,11 @@ function ReplayLabPageContent({ simulated }: { simulated: boolean }) {
               <div className="mt-6">
                 <ReplaySessionSummary session={session} />
               </div>
+              {session.disclaimer ? (
+                <p className="mt-5 text-xs leading-relaxed text-slate-600">
+                  {session.disclaimer}
+                </p>
+              ) : null}
             </GlassCard>
 
             <ReplayPriceChart series={session.series} selectedDate={selectedDate} />
@@ -277,6 +291,21 @@ function ReplayLabPageContent({ simulated }: { simulated: boolean }) {
                 Every chart point and indicator above is engineered from prices and volume
                 on or before {selectedDate}. Nothing after that session is included.
               </p>
+              {phase === 'reviewing' ? (
+                <div className="mt-6">
+                  <button
+                    type="button"
+                    onClick={continueToPrediction}
+                    className={cn(
+                      'rounded-xl bg-[#00FFB2] px-4 py-2.5 text-sm font-semibold text-black transition-colors',
+                      'hover:bg-[#00e6a0] focus-visible:outline-none focus-visible:ring-2',
+                      'focus-visible:ring-[#00FFB2]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d0c14]',
+                    )}
+                  >
+                    Continue to prediction
+                  </button>
+                </div>
+              ) : null}
             </GlassCard>
 
             <GlassCard className="p-6 sm:p-8 space-y-6">
@@ -322,20 +351,6 @@ function ReplayLabPageContent({ simulated }: { simulated: boolean }) {
                 />
               ) : null}
             </GlassCard>
-
-            {methodologySummary ? (
-              <GlassCard className="p-6 sm:p-8">
-                <h2 className="text-lg font-semibold text-white">How replay works</h2>
-                <p className="mt-3 text-sm leading-relaxed text-slate-400">
-                  {methodologySummary}
-                </p>
-                {session.disclaimer ? (
-                  <p className="mt-4 text-xs leading-relaxed text-slate-600">
-                    {session.disclaimer}
-                  </p>
-                ) : null}
-              </GlassCard>
-            ) : null}
           </FadeContent>
         ) : null}
 

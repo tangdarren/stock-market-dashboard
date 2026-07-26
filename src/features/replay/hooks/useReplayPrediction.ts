@@ -25,6 +25,7 @@ export interface ReplayPredictionState {
 
 type Action =
   | { type: 'reset' }
+  | { type: 'begin_configuring' }
   | { type: 'set_horizon'; horizon: ReplayForecastHorizon }
   | { type: 'set_direction'; direction: ReplayDirection }
   | { type: 'set_confidence'; confidence: number }
@@ -46,6 +47,14 @@ function reduce(state: ReplayPredictionState, action: Action): ReplayPredictionS
   switch (action.type) {
     case 'reset':
       return initialState
+
+    case 'begin_configuring': {
+      if (state.phase !== 'reviewing') return state
+      return {
+        ...state,
+        phase: 'configuring',
+      }
+    }
 
     case 'set_horizon': {
       if (state.phase === 'locked' || state.phase === 'revealed') return state
@@ -142,6 +151,10 @@ export function useReplayPrediction() {
   const [state, dispatch] = useReducer(reduce, initialState)
 
   const reset = useCallback(() => dispatch({ type: 'reset' }), [])
+  const beginConfiguring = useCallback(
+    () => dispatch({ type: 'begin_configuring' }),
+    [],
+  )
   const setHorizon = useCallback(
     (horizon: ReplayForecastHorizon) => dispatch({ type: 'set_horizon', horizon }),
     [],
@@ -183,6 +196,7 @@ export function useReplayPrediction() {
     canRestart,
     canReveal,
     reset,
+    beginConfiguring,
     setHorizon,
     setDirection,
     setConfidence,

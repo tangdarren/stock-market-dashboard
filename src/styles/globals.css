@@ -66,9 +66,14 @@ svg {
   max-width: 100%;
 }
 
-button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
+/*
+ * Keep button chrome out of the unlayered cascade. Unlayered
+ * `background`/`border` resets defeat Tailwind utilities such as
+ * `bg-[#00FFB2]`, `bg-white/[0.03]`, and border classes.
+ */
+@layer base {
+  button {
+    cursor: pointer;
+    font-family: inherit;
+  }
 }

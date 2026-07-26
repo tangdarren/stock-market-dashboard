@@ -14,6 +14,9 @@ import {
 const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d0c14]'
 
+const optionBase =
+  'rounded-xl border px-4 py-3 text-left text-sm transition-colors border-white/20 bg-white/[0.05]'
+
 const HORIZONS = [1, 5] as const
 const DIRECTIONS = [
   { value: 'up' as const, label: 'Up' },
@@ -39,9 +42,10 @@ export function ReplayPredictionForm({
   onConfidenceChange,
   onLock,
 }: ReplayPredictionFormProps) {
+  const confidence = draft.confidence ?? CONFIDENCE_MIN
   const previewProb =
-    draft.direction != null && draft.confidence != null
-      ? impliedProbUp(draft.direction, draft.confidence)
+    draft.direction != null
+      ? impliedProbUp(draft.direction, confidence)
       : null
 
   const handleHorizonKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -62,7 +66,12 @@ export function ReplayPredictionForm({
   }
 
   return (
-    <section aria-label="Configure your prediction" className="space-y-6">
+    <section
+      id="replay-prediction-form"
+      aria-label="Configure your prediction"
+      tabIndex={-1}
+      className="space-y-6 outline-none"
+    >
       <div>
         <h2 className="text-lg font-semibold text-white">Your prediction</h2>
         <p className="mt-1 text-sm text-slate-400">
@@ -71,7 +80,7 @@ export function ReplayPredictionForm({
         </p>
       </div>
 
-      <fieldset disabled={frozen} className="space-y-3 disabled:opacity-70">
+      <fieldset disabled={frozen} className="space-y-3 disabled:opacity-80">
         <legend className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
           Forecast horizon
         </legend>
@@ -89,6 +98,7 @@ export function ReplayPredictionForm({
                 type="button"
                 role="radio"
                 aria-checked={selected}
+                data-selected={selected ? 'true' : 'false'}
                 tabIndex={
                   frozen
                     ? -1
@@ -99,12 +109,12 @@ export function ReplayPredictionForm({
                 disabled={frozen}
                 onClick={() => onHorizonChange(horizon)}
                 className={cn(
-                  'rounded-xl border px-4 py-3 text-left text-sm transition-colors',
+                  optionBase,
                   focusRing,
                   selected
-                    ? 'border-[#00FFB2]/45 bg-[#00FFB2]/10 text-white'
-                    : 'border-white/[0.1] bg-white/[0.03] text-slate-200 hover:border-[#00FFB2]/25',
-                  frozen && 'cursor-not-allowed',
+                    ? 'border-[#00FFB2]/60 bg-[#00FFB2]/15 text-white'
+                    : 'text-slate-200 hover:border-[#00FFB2]/35 hover:bg-white/[0.07]',
+                  frozen && 'cursor-not-allowed text-slate-300',
                 )}
               >
                 <span className="font-medium">{horizonLabel(horizon)}</span>
@@ -114,7 +124,7 @@ export function ReplayPredictionForm({
         </div>
       </fieldset>
 
-      <fieldset disabled={frozen} className="space-y-3 disabled:opacity-70">
+      <fieldset disabled={frozen} className="space-y-3 disabled:opacity-80">
         <legend className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
           Direction
         </legend>
@@ -132,6 +142,7 @@ export function ReplayPredictionForm({
                 type="button"
                 role="radio"
                 aria-checked={selected}
+                data-selected={selected ? 'true' : 'false'}
                 tabIndex={
                   frozen
                     ? -1
@@ -143,16 +154,15 @@ export function ReplayPredictionForm({
                 disabled={frozen}
                 onClick={() => onDirectionChange(option.value)}
                 className={cn(
-                  'rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors',
+                  optionBase,
                   focusRing,
                   selected &&
                     option.value === 'up' &&
-                    'border-[#00FFB2]/45 bg-[#00FFB2]/10 text-[#00FFB2]',
+                    'border-[#00FFB2]/60 bg-[#00FFB2]/15 text-[#00FFB2]',
                   selected &&
                     option.value === 'down' &&
-                    'border-red-400/45 bg-red-400/10 text-red-300',
-                  !selected &&
-                    'border-white/[0.1] bg-white/[0.03] text-slate-200 hover:border-white/[0.2]',
+                    'border-red-400/55 bg-red-400/15 text-red-300',
+                  !selected && 'text-slate-200 hover:border-white/30 hover:bg-white/[0.07]',
                   frozen && 'cursor-not-allowed',
                 )}
               >
@@ -168,9 +178,7 @@ export function ReplayPredictionForm({
           <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
             Confidence
           </span>
-          <span className="mt-1 block text-sm text-slate-300">
-            {draft.confidence != null ? `${draft.confidence}%` : 'Not set — choose 50% to 100%'}
-          </span>
+          <span className="mt-1 block text-sm text-slate-300">{confidence}%</span>
         </label>
         <input
           id="replay-confidence"
@@ -178,14 +186,12 @@ export function ReplayPredictionForm({
           min={CONFIDENCE_MIN}
           max={CONFIDENCE_MAX}
           step={1}
-          value={draft.confidence ?? CONFIDENCE_MIN}
+          value={confidence}
           disabled={frozen}
           aria-valuemin={CONFIDENCE_MIN}
           aria-valuemax={CONFIDENCE_MAX}
-          aria-valuenow={draft.confidence ?? undefined}
-          aria-valuetext={
-            draft.confidence != null ? `${draft.confidence} percent` : 'Confidence not set'
-          }
+          aria-valuenow={confidence}
+          aria-valuetext={`${confidence} percent`}
           onChange={(event) => onConfidenceChange(Number(event.target.value))}
           className={cn(
             'w-full accent-[#00FFB2] disabled:cursor-not-allowed disabled:opacity-60',
@@ -224,7 +230,7 @@ export function ReplayPredictionForm({
           </button>
           {!canLock ? (
             <p className="text-xs text-slate-500" role="status">
-              Select a horizon, direction, and confidence to lock.
+              Select a horizon and direction to lock.
             </p>
           ) : null}
         </div>

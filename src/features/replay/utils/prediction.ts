@@ -13,7 +13,7 @@ export type ReplayWorkflowPhase =
 export interface ReplayPredictionDraft {
   horizon: ReplayForecastHorizon | null
   direction: ReplayDirection | null
-  /** Integer percent in [50, 100], or null until chosen. */
+  /** Integer percent in [50, 100]. Defaults to CONFIDENCE_MIN. */
   confidence: number | null
 }
 
@@ -25,14 +25,14 @@ export interface LockedReplayPrediction {
   probUp: number
 }
 
+export const CONFIDENCE_MIN = 50
+export const CONFIDENCE_MAX = 100
+
 export const EMPTY_PREDICTION_DRAFT: ReplayPredictionDraft = {
   horizon: null,
   direction: null,
-  confidence: null,
+  confidence: CONFIDENCE_MIN,
 }
-
-export const CONFIDENCE_MIN = 50
-export const CONFIDENCE_MAX = 100
 
 /**
  * Convert a directional forecast + confidence into p(up).

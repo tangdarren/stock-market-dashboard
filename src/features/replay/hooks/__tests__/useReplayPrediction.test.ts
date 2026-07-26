@@ -10,6 +10,15 @@ describe('replayPredictionReducer', () => {
     expect(replayPredictionInitialState.revealRequested).toBe(false)
     expect(replayPredictionInitialState.revealId).toBeNull()
     expect(replayPredictionInitialState.locked).toBeNull()
+    expect(replayPredictionInitialState.draft.confidence).toBe(50)
+  })
+
+  it('moves to configuring via begin_configuring without changing the draft', () => {
+    const next = replayPredictionReducer(replayPredictionInitialState, {
+      type: 'begin_configuring',
+    })
+    expect(next.phase).toBe('configuring')
+    expect(next.draft).toEqual(replayPredictionInitialState.draft)
   })
 
   it('moves to configuring when the draft changes', () => {
@@ -139,7 +148,7 @@ describe('replayPredictionReducer', () => {
 
     expect(state).toEqual({
       phase: 'configuring',
-      draft: { horizon: null, direction: null, confidence: null },
+      draft: { horizon: null, direction: null, confidence: 50 },
       locked: null,
       revealRequested: false,
       revealId: null,

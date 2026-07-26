@@ -282,7 +282,7 @@ describe('ReplayLabPage', () => {
     expect(screen.getByText(/other horizon \(not scored this round\)/i)).toBeInTheDocument()
   })
 
-  it('requires horizon, direction, and confidence before locking', async () => {
+  it('defaults confidence to 50% and locks after horizon and direction only', async () => {
     const user = userEvent.setup()
     renderWithProviders(<ReplayLabPage />)
 
@@ -290,14 +290,118 @@ describe('ReplayLabPage', () => {
       expect(screen.getByRole('button', { name: /lock prediction/i })).toBeDisabled()
     })
 
+    const confidence = screen.getByLabelText(/confidence/i) as HTMLInputElement
+    expect(confidence.value).toBe('50')
+    expect(confidence).toHaveAttribute('aria-valuenow', '50')
+    expect(confidence).toHaveAttribute('aria-valuetext', '50 percent')
+
     await user.click(screen.getByRole('radio', { name: /one trading session/i }))
     expect(screen.getByRole('button', { name: /lock prediction/i })).toBeDisabled()
 
     await user.click(screen.getByRole('radio', { name: /^up$/i }))
-    expect(screen.getByRole('button', { name: /lock prediction/i })).toBeDisabled()
-
-    fireConfidence(55)
     expect(screen.getByRole('button', { name: /lock prediction/i })).toBeEnabled()
+  })
+
+  it('continues from review to prediction via an explicit workflow action', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ReplayLabPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /continue to prediction/i })).toBeInTheDocument()
+    })
+
+    const reviewStep = screen.getByText(/^review session$/i).closest('li')
+    expect(reviewStep).toHaveAttribute('aria-current', 'step')
+    expect(reviewStep).toHaveAttribute('data-state', 'active')
+    expect(screen.getByText(/current step/i)).toBeInTheDocument()
+    expect(screen.getByTestId('workflow-instruction')).toHaveTextContent(
+      /review the session below, then continue to your prediction/i,
+    )
+
+    await user.click(screen.getByRole('button', { name: /continue to prediction/i }))
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /continue to prediction/i })).not.toBeInTheDocument()
+    })
+
+    const configureStep = screen.getByText(/^configure prediction$/i).closest('li')
+    expect(configureStep).toHaveAttribute('aria-current', 'step')
+    expect(configureStep).toHaveAttribute('data-state', 'active')
+    expect(screen.getByTestId('workflow-instruction')).toHaveTextContent(
+      /choose a horizon and direction/i,
+    )
+
+    const form = screen.getByRole('region', { name: /configure your prediction/i })
+    await waitFor(() => {
+      expect(form).toHaveFocus()
+    })
+  })
+
+  it('highlights selected horizon and direction options', async () => {
+    const user = userEvent.setup()
+    renderWithProviders(<ReplayLabPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('radio', { name: /one trading session/i })).toBeInTheDocument()
+    })
+
+    const oneDay = screen.getByRole('radio', { name: /one trading session/i })
+    const fiveDay = screen.getByRole('radio', { name: /five trading sessions/i })
+    const up = screen.getByRole('radio', { name: /^up$/i })
+    const down = screen.getByRole('radio', { name: /^down$/i })
+
+    expect(oneDay.className).toMatch(/bg-white\/\[0\.05\]/)
+    expect(oneDay.className).toMatch(/border-white\/20/)
+    expect(up.className).toMatch(/bg-white\/\[0\.05\]/)
+
+    await user.click(oneDay)
+    await user.click(down)
+
+    expect(oneDay).toHaveAttribute('data-selected', 'true')
+    expect(oneDay.className).toMatch(/bg-\[#00FFB2\]\/15/)
+    expect(fiveDay).toHaveAttribute('data-selected', 'false')
+    expect(down).toHaveAttribute('data-selected', 'true')
+    expect(down.className).toMatch(/bg-red-400\/15/)
+    expect(down.className).toMatch(/text-red-300/)
+    expect(up).toHaveAttribute('data-selected', 'false')
+
+    await user.click(up)
+    expect(up.className).toMatch(/bg-\[#00FFB2\]\/15/)
+    expect(up.className).toMatch(/text-\[#00FFB2\]/)
+  })
+
+  it('keeps primary action button utility classes intact', async () => {
+    renderWithProviders(<ReplayLabPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /continue to prediction/i })).toBeInTheDocument()
+    })
+
+    const continueBtn = screen.getByRole('button', { name: /continue to prediction/i })
+    expect(continueBtn.className).toMatch(/bg-\[#00FFB2\]/)
+    expect(continueBtn.className).toMatch(/text-black/)
+
+    const lockBtn = screen.getByRole('button', { name: /lock prediction/i })
+    expect(lockBtn.className).toMatch(/bg-\[#00FFB2\]/)
+    expect(lockBtn.className).toMatch(/text-black/)
+
+    const loadBtn = screen.getByRole('button', { name: /load session/i })
+    expect(loadBtn.className).toMatch(/bg-\[#00FFB2\]/)
+
+    const randomBtn = screen.getByRole('button', { name: /random session/i })
+    expect(randomBtn.className).toMatch(/bg-white\/\[0\.03\]/)
+    expect(randomBtn.className).toMatch(/border-white\/\[0\.12\]/)
+  })
+
+  it('does not render the redundant how-replay-works card', async () => {
+    renderWithProviders(<ReplayLabPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^selected session$/i })).toBeInTheDocument()
+    })
+
+    expect(screen.queryByRole('heading', { name: /how replay works/i })).not.toBeInTheDocument()
+    expect(screen.getByText(demoReplaySession.disclaimer)).toBeInTheDocument()
   })
 
   it('freezes prediction controls after lock and supports cancel before reveal', async () => {
