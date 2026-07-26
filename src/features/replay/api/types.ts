@@ -51,6 +51,7 @@ export interface ReplaySessionResponse {
   generated_at: string
   reason?: string | null
   detail?: string | null
+  data_classification?: string | null
 }
 
 export interface ReplayHorizonOutcome {
@@ -94,6 +95,7 @@ export interface ReplayResultResponse {
   generated_at: string
   reason?: string | null
   detail?: string | null
+  data_classification?: string | null
 }
 
 /** Discriminated request used by the session React Query hook. */

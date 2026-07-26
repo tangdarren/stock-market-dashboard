@@ -21,6 +21,8 @@ interface HistoricalAnaloguesPanelProps {
    * badge so the user is never misled into thinking the analogues are live.
    */
   isDemo?: boolean
+  /** When true, label analogues as fictional scenario matches. */
+  isSimulated?: boolean
 }
 
 const PANEL_DISCLAIMER =
@@ -38,6 +40,7 @@ export function HistoricalAnaloguesPanel({
   isLoading,
   error,
   isDemo,
+  isSimulated,
 }: HistoricalAnaloguesPanelProps) {
   if (isLoading && !data) {
     return <LoadingState />
@@ -79,6 +82,7 @@ export function HistoricalAnaloguesPanel({
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs">
             {isDemo ? <DemoPill /> : null}
+            {isSimulated && !isDemo ? <SimulatedPill /> : null}
             {isStale ? <StalePill /> : null}
           </div>
         </div>
@@ -320,6 +324,14 @@ function DemoPill() {
     <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-200">
       <span aria-hidden>◆</span>
       Demo data — sample analogues
+    </span>
+  )
+}
+
+function SimulatedPill() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-[#00FFB2]/30 bg-[#00FFB2]/10 px-2 py-0.5 text-[11px] font-medium text-[#00FFB2]">
+      Simulated matches — fictional scenario
     </span>
   )
 }

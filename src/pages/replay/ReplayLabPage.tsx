@@ -19,6 +19,7 @@ import { useReplaySession } from '@/features/replay/hooks/useReplaySession'
 import type { ReplaySessionRequest } from '@/features/replay/api/types'
 import { isValidIsoDate, normalizeDateInput } from '@/features/replay/utils/dateValidation'
 import { useSimulatedDataMode } from '@/features/simulated/useSimulatedDataMode'
+import { SimulatedDataNotice } from '@/features/simulated/SimulatedDataNotice'
 import { BackendUnavailableError } from '@/lib/api/client'
 import { usePageTitle } from '@/hooks/usePageTitle'
 
@@ -26,10 +27,10 @@ export function ReplayLabPage() {
   usePageTitle('Market Replay Lab')
   const { enabled: simulated } = useSimulatedDataMode()
   // Remount on mode change so session/prediction/history state cannot leak.
-  return <ReplayLabPageContent key={simulated ? 'simulated' : 'live'} />
+  return <ReplayLabPageContent key={simulated ? 'simulated' : 'live'} simulated={simulated} />
 }
 
-function ReplayLabPageContent() {
+function ReplayLabPageContent({ simulated }: { simulated: boolean }) {
   // Load a random eligible session on first open.
   const [request, setRequest] = useState<ReplaySessionRequest>({
     kind: 'random',
@@ -196,11 +197,17 @@ function ReplayLabPageContent() {
             Market Replay Lab
           </h1>
           <p className="mt-4 max-w-2xl text-base text-slate-400">
-            Review a historical SPY session using only information available through that
-            date, lock a directional forecast, then reveal the model’s out-of-sample
-            walk-forward prediction and the realized outcome.
+            {simulated
+              ? 'Review a fictional scenario session from the synthetic workbook using only information available through that date, lock a directional forecast, then reveal the scenario walk-forward prediction and outcome.'
+              : 'Review a historical SPY session using only information available through that date, lock a directional forecast, then reveal the model’s out-of-sample walk-forward prediction and the realized outcome.'}
           </p>
         </FadeContent>
+
+        {simulated ? (
+          <FadeContent className="mt-6">
+            <SimulatedDataNotice />
+          </FadeContent>
+        ) : null}
 
         <FadeContent className="mt-10">
           <GlassCard className="p-6 sm:p-8">

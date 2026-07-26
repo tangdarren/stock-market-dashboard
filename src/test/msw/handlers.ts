@@ -16,16 +16,33 @@ import {
   demoReplayResult,
   demoReplaySession,
 } from '@/features/replay/demo/demoResponses'
+import {
+  simulatedAnalogues,
+  simulatedForecast,
+  simulatedHistory,
+  simulatedMarket,
+  simulatedMetrics,
+  simulatedModelMonitoring,
+  simulatedNews,
+  simulatedReplayResult,
+  simulatedReplaySession,
+} from '@/features/simulated/demo/simulatedResponses'
 
 const base = `${ENV.API_BASE_URL}${ENV.API_PREFIX}`
 
-function monitoringFromUrl(url: string) {
+function isSimulatedRequest(request: Request): boolean {
+  return new URL(request.url).searchParams.get('simulated') === 'true'
+}
+
+function monitoringFromUrl(url: string, simulated = false) {
   const parsed = new URL(url)
   const horizon = parsed.searchParams.get('horizon') === '5d' ? '5d' : '1d'
   const rawWindow = Number(parsed.searchParams.get('window') ?? 30)
   const window =
     rawWindow === 60 || rawWindow === 120 || rawWindow === 252 ? rawWindow : 30
-  return demoModelMonitoring(horizon, window)
+  return simulated
+    ? simulatedModelMonitoring(horizon, window)
+    : demoModelMonitoring(horizon, window)
 }
 
 export const successHandlers = [
@@ -41,24 +58,60 @@ export const successHandlers = [
       model_available: true,
     }),
   ),
-  http.get(`${base}/market/spy`, () =>
-    HttpResponse.json({ ...demoMarket, mode: 'live', source: 'alpha_vantage' }),
+  http.get(`${base}/market/spy`, ({ request }) =>
+    HttpResponse.json(
+      isSimulatedRequest(request)
+        ? simulatedMarket
+        : { ...demoMarket, mode: 'live', source: 'alpha_vantage' },
+    ),
   ),
-  http.get(`${base}/forecasts/spy`, () =>
-    HttpResponse.json({ ...demoForecast, mode: 'live' }),
+  http.get(`${base}/forecasts/spy`, ({ request }) =>
+    HttpResponse.json(
+      isSimulatedRequest(request)
+        ? simulatedForecast
+        : { ...demoForecast, mode: 'live' },
+    ),
   ),
-  http.get(`${base}/forecasts/history`, () => HttpResponse.json(demoHistory)),
-  http.get(`${base}/model/metrics`, () => HttpResponse.json(demoMetrics)),
+  http.get(`${base}/forecasts/history`, ({ request }) =>
+    HttpResponse.json(
+      isSimulatedRequest(request) ? simulatedHistory : demoHistory,
+    ),
+  ),
+  http.get(`${base}/model/metrics`, ({ request }) =>
+    HttpResponse.json(
+      isSimulatedRequest(request) ? simulatedMetrics : demoMetrics,
+    ),
+  ),
   http.get(`${base}/model/monitoring`, ({ request }) =>
-    HttpResponse.json(monitoringFromUrl(request.url)),
+    HttpResponse.json(
+      monitoringFromUrl(request.url, isSimulatedRequest(request)),
+    ),
   ),
-  http.get(`${base}/news/spy`, () => HttpResponse.json(demoNews)),
-  http.get(`${base}/market/spy/analogues`, () =>
-    HttpResponse.json({ ...demoAnalogues, mode: 'live', cache_status: 'miss' }),
+  http.get(`${base}/news/spy`, ({ request }) =>
+    HttpResponse.json(isSimulatedRequest(request) ? simulatedNews : demoNews),
   ),
-  http.get(`${base}/replay/spy/session`, () => HttpResponse.json(demoReplaySession)),
-  http.get(`${base}/replay/spy/random`, () => HttpResponse.json(demoReplaySession)),
-  http.get(`${base}/replay/spy/result`, () => HttpResponse.json(demoReplayResult)),
+  http.get(`${base}/market/spy/analogues`, ({ request }) =>
+    HttpResponse.json(
+      isSimulatedRequest(request)
+        ? simulatedAnalogues
+        : { ...demoAnalogues, mode: 'live', cache_status: 'miss' },
+    ),
+  ),
+  http.get(`${base}/replay/spy/session`, ({ request }) =>
+    HttpResponse.json(
+      isSimulatedRequest(request) ? simulatedReplaySession : demoReplaySession,
+    ),
+  ),
+  http.get(`${base}/replay/spy/random`, ({ request }) =>
+    HttpResponse.json(
+      isSimulatedRequest(request) ? simulatedReplaySession : demoReplaySession,
+    ),
+  ),
+  http.get(`${base}/replay/spy/result`, ({ request }) =>
+    HttpResponse.json(
+      isSimulatedRequest(request) ? simulatedReplayResult : demoReplayResult,
+    ),
+  ),
 ]
 
 export const modelUnavailableHandlers = [

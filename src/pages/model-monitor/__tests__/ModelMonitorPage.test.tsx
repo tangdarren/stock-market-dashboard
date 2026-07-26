@@ -303,4 +303,36 @@ describe('ModelMonitorPage', () => {
     const links = screen.getAllByRole('link', { name: /model monitor/i })
     expect(links.some((link) => link.getAttribute('aria-current') === 'page')).toBe(true)
   })
+
+  it('labels simulated monitoring and does not claim live SPY health', async () => {
+    window.localStorage.setItem('spy-forecast-lab:simulated-data', '1')
+    renderWithProviders(<ModelMonitorPage />, [ROUTES.MONITOR])
+
+    expect(
+      await screen.findByRole('status', { name: /simulated workbook data/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/Simulated monitoring scores synthetic/i),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByText(/^Simulated$/i),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(/scenario outputs, not live SPY health/i),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps live intro copy when simulated mode is off', async () => {
+    renderWithProviders(<ModelMonitorPage />, [ROUTES.MONITOR])
+
+    expect(
+      await screen.findByRole('heading', { name: /model monitor/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('status', { name: /simulated workbook data/i }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/SPY direction models/i),
+    ).toBeInTheDocument()
+  })
 })

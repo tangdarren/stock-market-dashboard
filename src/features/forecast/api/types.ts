@@ -40,6 +40,8 @@ export interface MarketResponse {
   mode: Mode
   is_stale: boolean
   cache: CacheMeta
+  disclaimer?: string
+  data_classification?: string
 }
 
 export interface ExplanationFactor {
@@ -81,6 +83,8 @@ export interface ForecastResponse {
   model_unavailable: boolean
   reason?: string
   model_version?: string | null
+  source?: string
+  data_classification?: string
 }
 
 export interface WalkForwardRecord {
@@ -97,6 +101,9 @@ export interface ForecastHistoryResponse {
   records: WalkForwardRecord[]
   count: number
   model_version?: string | null
+  mode?: Mode
+  source?: string
+  disclaimer?: string
 }
 
 export interface ModelComparisonRow {
@@ -176,6 +183,10 @@ export interface MetricsResponse {
   horizons: Record<string, HorizonMetrics>
   generated_at: string
   model_version?: string | null
+  mode?: Mode
+  source?: string
+  disclaimer?: string
+  data_classification?: string
 }
 
 export interface NewsArticle {
@@ -195,6 +206,10 @@ export interface NewsResponse {
   aggregate?: { n_articles: number; avg_score: number | null }
   meta?: CacheMeta
   note: string
+  mode?: Mode
+  source?: string
+  disclaimer?: string
+  data_classification?: string
 }
 
 export interface HealthResponse {
@@ -260,4 +275,6 @@ export interface AnalogueResponse {
   generated_at?: string
   reason?: string
   detail?: string
+  source?: string
+  data_classification?: string
 }

@@ -34,6 +34,8 @@ import { useSpyAnalogues } from '@/features/forecast/hooks/useSpyAnalogues'
 import { useSpyForecast } from '@/features/forecast/hooks/useSpyForecast'
 import { useSpyMarketData } from '@/features/forecast/hooks/useSpyMarketData'
 import { useSpyNews } from '@/features/forecast/hooks/useSpyNews'
+import { SimulatedDataNotice } from '@/features/simulated/SimulatedDataNotice'
+import { useSimulatedDataMode } from '@/features/simulated/useSimulatedDataMode'
 import { BackendUnavailableError } from '@/lib/api/client'
 import { ENV } from '@/lib/api/env'
 
@@ -66,6 +68,7 @@ export function DailyDashboardPage() {
   const queryClient = useQueryClient()
   const [isRefreshing, setIsRefreshing] = useState(false)
   const { enabled: demoOverride, enable: enableDemo, disable: disableDemo } = useDemoOverride()
+  const { enabled: simulatedEnabled } = useSimulatedDataMode()
 
   const market = useSpyMarketData()
   const forecast = useSpyForecast()
@@ -80,6 +83,8 @@ export function DailyDashboardPage() {
     forecast.error instanceof BackendUnavailableError
   const shouldUseDemoFallback = demoOverride || ENV.DEMO_MODE
   const showBackendUnavailableCard = backendUnavailable && !shouldUseDemoFallback
+  // Demo sample fixtures stay distinct from simulated workbook mode.
+  const showSimulatedNotice = simulatedEnabled && !shouldUseDemoFallback
 
   const marketData = market.data ?? (shouldUseDemoFallback ? demoMarket : undefined)
   const forecastData = forecast.data ?? (shouldUseDemoFallback ? demoForecast : undefined)
@@ -91,8 +96,14 @@ export function DailyDashboardPage() {
 
   const effectiveMode: Mode = useMemo(() => {
     if (shouldUseDemoFallback) return 'demo'
+    if (simulatedEnabled) return 'simulated'
     return forecastData?.mode ?? marketData?.mode ?? 'unavailable'
-  }, [shouldUseDemoFallback, forecastData?.mode, marketData?.mode])
+  }, [
+    shouldUseDemoFallback,
+    simulatedEnabled,
+    forecastData?.mode,
+    marketData?.mode,
+  ])
 
   const modelIsMissing = forecastData?.model_unavailable === true
   const oneDay = forecastData?.one_day ?? null
@@ -141,6 +152,12 @@ export function DailyDashboardPage() {
             />
           </section>
         </FadeContent>
+
+        {showSimulatedNotice ? (
+          <FadeContent delay={40} className="mt-6">
+            <SimulatedDataNotice />
+          </FadeContent>
+        ) : null}
 
         {showBackendUnavailableCard ? (
           <FadeContent delay={80} className="mt-6">
@@ -192,7 +209,11 @@ export function DailyDashboardPage() {
                 id={SECTION_IDS.conditions}
                 eyebrow="Section 2"
                 title="Current market conditions"
-                description="The latest completed SPY session and the indicators used to build the forecast."
+                description={
+                  showSimulatedNotice
+                    ? 'The latest completed session from the synthetic workbook and the indicators used to build the scenario forecast.'
+                    : 'The latest completed SPY session and the indicators used to build the forecast.'
+                }
               >
                 <MarketConditionsPanel market={marketData} />
               </ForecastSection>
@@ -225,7 +246,11 @@ export function DailyDashboardPage() {
                 id={SECTION_IDS.analogues}
                 eyebrow="Section 4"
                 title="Similar historical market setups"
-                description="Past SPY sessions with the most similar momentum, volatility, price, and volume conditions. Descriptive only — not a prediction."
+                description={
+                  showSimulatedNotice
+                    ? 'Fictional workbook sessions with similar momentum, volatility, price, and volume conditions. Descriptive only — not a prediction.'
+                    : 'Past SPY sessions with the most similar momentum, volatility, price, and volume conditions. Descriptive only — not a prediction.'
+                }
               >
                 <HistoricalAnaloguesPanel
                   data={analoguesData}
@@ -237,6 +262,9 @@ export function DailyDashboardPage() {
                   // demo-override localStorage flag can't mislabel a real live
                   // response as demo data if the backend has come back up.
                   isDemo={analoguesData?.mode === 'demo'}
+                  isSimulated={
+                    showSimulatedNotice || analoguesData?.mode === 'simulated'
+                  }
                 />
               </ForecastSection>
             </FadeContent>
@@ -247,7 +275,11 @@ export function DailyDashboardPage() {
                 id={SECTION_IDS.performance}
                 eyebrow="Section 5"
                 title="How reliable has the model been?"
-                description="Out-of-sample performance compared with simple forecasting baselines."
+                description={
+                  showSimulatedNotice
+                    ? 'Scenario holdout metrics from the simulated workbook — not real SPY model performance.'
+                    : 'Out-of-sample performance compared with simple forecasting baselines.'
+                }
               >
                 <ModelPerformancePanel metrics={metricsData} />
               </ForecastSection>
@@ -259,7 +291,11 @@ export function DailyDashboardPage() {
                 id={SECTION_IDS.history}
                 eyebrow="Section 6"
                 title="Historical forecast review"
-                description="Recent out-of-sample forecasts, the actual outcomes, and the realized return."
+                description={
+                  showSimulatedNotice
+                    ? 'Recent fictional Forecast_History rows, scenario outcomes, and realized returns from the workbook.'
+                    : 'Recent out-of-sample forecasts, the actual outcomes, and the realized return.'
+                }
               >
                 <ForecastHistoryTable records={historyData?.records ?? []} />
               </ForecastSection>
@@ -271,9 +307,16 @@ export function DailyDashboardPage() {
                 id={SECTION_IDS.backtest}
                 eyebrow="Section 7"
                 title="Educational strategy simulation"
-                description="A simple, transparent rule that goes long SPY when the model is confident enough — and holds cash otherwise."
+                description={
+                  showSimulatedNotice
+                    ? 'A simple rule applied to fictional workbook forecasts — not real SPY strategy results.'
+                    : 'A simple, transparent rule that goes long SPY when the model is confident enough — and holds cash otherwise.'
+                }
               >
-                <BacktestSummary backtest={metricsData?.horizons?.['1d']?.backtest} />
+                <BacktestSummary
+                  backtest={metricsData?.horizons?.['1d']?.backtest}
+                  isSimulated={showSimulatedNotice || metricsData?.mode === 'simulated'}
+                />
               </ForecastSection>
             </FadeContent>
 
@@ -283,9 +326,13 @@ export function DailyDashboardPage() {
                 id={SECTION_IDS.news}
                 eyebrow="Section 8"
                 title="Current news context"
-                description="Current news context is displayed separately and is not used by the forecasting model."
+                description={
+                  showSimulatedNotice
+                    ? 'Fictional news context from the workbook. Displayed separately and not used by the forecasting model.'
+                    : 'Current news context is displayed separately and is not used by the forecasting model.'
+                }
               >
-                <NewsContextPanel news={newsData} />
+                <NewsContextPanel news={newsData} isSimulated={showSimulatedNotice} />
               </ForecastSection>
             </FadeContent>
 

@@ -10,6 +10,7 @@ interface MonitorStatusPanelProps {
   unavailableDetail?: string | null
   errorMessage?: string | null
   onRetry?: () => void
+  simulated?: boolean
 }
 
 export function MonitorStatusPanel({
@@ -19,6 +20,7 @@ export function MonitorStatusPanel({
   unavailableDetail,
   errorMessage,
   onRetry,
+  simulated = false,
 }: MonitorStatusPanelProps) {
   if (isLoading) {
     return (
@@ -40,13 +42,19 @@ export function MonitorStatusPanel({
   }
 
   if (unavailableReason) {
+    const workbookMissing =
+      simulated &&
+      (unavailableReason === 'simulated_workbook_missing' ||
+        unavailableReason.includes('simulated'))
     return (
       <GlassCard className="p-6 sm:p-8">
         <div className="flex flex-col gap-3">
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-300/80">
-            Monitoring unavailable
+            {workbookMissing ? 'Simulated monitoring unavailable' : 'Monitoring unavailable'}
           </p>
-          <h2 className="text-xl font-semibold text-white">Artifacts not ready</h2>
+          <h2 className="text-xl font-semibold text-white">
+            {workbookMissing ? 'Workbook not ready' : 'Artifacts not ready'}
+          </h2>
           <p className="text-sm text-slate-300">
             {unavailableDetail || unavailableReasonMessage(unavailableReason)}
           </p>

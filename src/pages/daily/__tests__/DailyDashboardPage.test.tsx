@@ -291,4 +291,51 @@ describe('DailyDashboardPage', () => {
       ).toBeInTheDocument()
     })
   })
+
+  describe('Simulated workbook mode', () => {
+    it('shows the page notice, ModeBadge, and fictional news label when simulated is on', async () => {
+      window.localStorage.setItem('spy-forecast-lab:simulated-data', '1')
+      renderWithProviders(<DailyDashboardPage />)
+
+      expect(
+        await screen.findByRole('status', { name: /simulated workbook data/i }),
+      ).toBeInTheDocument()
+      expect(await screen.findByText('Simulated data')).toBeInTheDocument()
+      expect(screen.getByText('Simulated news')).toBeInTheDocument()
+      expect(
+        screen.getByText(/not sourced from Alpha Vantage/i),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText(/not real SPY model performance/i),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText(/Simulated matches — fictional scenario/i),
+      ).toBeInTheDocument()
+    })
+
+    it('keeps live labeling when simulated mode is off', async () => {
+      renderWithProviders(<DailyDashboardPage />)
+
+      expect(await screen.findByText('Live data')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('status', { name: /simulated workbook data/i }),
+      ).not.toBeInTheDocument()
+      expect(screen.queryByText('Simulated news')).not.toBeInTheDocument()
+    })
+
+    it('does not auto-enable simulated mode when the live backend is down', async () => {
+      server.use(...backendDownHandlers)
+      renderWithProviders(<DailyDashboardPage />)
+
+      expect(
+        await screen.findByRole('heading', { name: /backend unavailable/i }),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByRole('status', { name: /simulated workbook data/i }),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: /Show sample data/i }),
+      ).toBeInTheDocument()
+    })
+  })
 })

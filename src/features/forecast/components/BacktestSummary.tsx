@@ -5,9 +5,14 @@ import { formatPercent } from '../utils/format'
 
 interface BacktestSummaryProps {
   backtest?: BacktestData
+  /** Soften SPY / historical framing when viewing simulated workbook metrics. */
+  isSimulated?: boolean
 }
 
-export function BacktestSummary({ backtest }: BacktestSummaryProps) {
+export function BacktestSummary({
+  backtest,
+  isSimulated = false,
+}: BacktestSummaryProps) {
   if (!backtest || !backtest.available) {
     return (
       <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-6">
@@ -16,6 +21,7 @@ export function BacktestSummary({ backtest }: BacktestSummaryProps) {
             Educational simulation
           </p>
           <Badge variant="neutral">1-day model only</Badge>
+          {isSimulated ? <Badge variant="info">Simulated</Badge> : null}
         </div>
         <p className="mt-4 text-sm text-slate-400">
           {backtest?.reason === 'no_holdout_predictions'
@@ -37,6 +43,7 @@ export function BacktestSummary({ backtest }: BacktestSummaryProps) {
     test_period_end,
     cost_bps_per_side,
     n_days,
+    disclaimer,
   } = backtest
 
   const alpha =
@@ -47,16 +54,33 @@ export function BacktestSummary({ backtest }: BacktestSummaryProps) {
     <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-            Educational simulation
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Educational simulation
+            </p>
+            {isSimulated ? <Badge variant="info">Simulated</Badge> : null}
+          </div>
           <p className="mt-2 max-w-xl text-sm text-slate-300">
-            The simulation holds SPY when the one-day up probability reaches{' '}
-            <span className="font-semibold text-white">
-              {threshold != null ? (threshold * 100).toFixed(0) : '—'}%
-            </span>{' '}
-            and otherwise remains in cash. It uses only out-of-sample,
-            walk-forward predictions.
+            {isSimulated ? (
+              <>
+                The scenario holds the synthetic series when the one-day up
+                probability reaches{' '}
+                <span className="font-semibold text-white">
+                  {threshold != null ? (threshold * 100).toFixed(0) : '—'}%
+                </span>{' '}
+                and otherwise remains in cash. Figures come from fictional
+                Forecast_History rows — not real SPY performance.
+              </>
+            ) : (
+              <>
+                The simulation holds SPY when the one-day up probability reaches{' '}
+                <span className="font-semibold text-white">
+                  {threshold != null ? (threshold * 100).toFixed(0) : '—'}%
+                </span>{' '}
+                and otherwise remains in cash. It uses only out-of-sample,
+                walk-forward predictions.
+              </>
+            )}
           </p>
         </div>
         <Badge variant="warning">Educational only</Badge>
@@ -73,11 +97,11 @@ export function BacktestSummary({ backtest }: BacktestSummaryProps) {
           }
         />
         <Stat
-          label="Buy & hold"
+          label={isSimulated ? 'Buy & hold (scenario)' : 'Buy & hold'}
           value={formatPercent((cumulative_return_buy_hold ?? 0) * 100, 2)}
         />
         <Stat
-          label="vs Buy & hold"
+          label={isSimulated ? 'vs scenario hold' : 'vs Buy & hold'}
           value={formatPercent(alpha * 100, 2)}
           tone={strategyWins ? 'up' : 'down'}
         />
@@ -116,8 +140,10 @@ export function BacktestSummary({ backtest }: BacktestSummaryProps) {
       </div>
 
       <p className="mt-3 text-[11px] text-slate-500">
-        Educational historical simulation. Past performance does not guarantee
-        future results.
+        {disclaimer?.trim() ||
+          (isSimulated
+            ? 'Educational fictional scenario simulation. Not real SPY performance.'
+            : 'Educational historical simulation. Past performance does not guarantee future results.')}
       </p>
     </div>
   )

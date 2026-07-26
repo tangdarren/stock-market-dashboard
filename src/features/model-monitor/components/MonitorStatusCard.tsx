@@ -16,13 +16,22 @@ interface MonitorStatusCardProps {
 }
 
 export function MonitorStatusCard({ data }: MonitorStatusCardProps) {
+  const simulated = data.mode === 'simulated'
+
   return (
     <GlassCard className="p-6 sm:p-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 space-y-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#00FFB2]/70">
-            Overall health
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#00FFB2]/70">
+              Overall health
+            </p>
+            {simulated ? (
+              <span className="rounded-full border border-[#00FFB2]/30 bg-[#00FFB2]/10 px-2 py-0.5 text-[11px] font-medium text-[#00FFB2]">
+                Simulated
+              </span>
+            ) : null}
+          </div>
           <h2 className="text-2xl font-semibold tracking-tight text-white">
             {overallStatusHeadline(data.status)}
           </h2>

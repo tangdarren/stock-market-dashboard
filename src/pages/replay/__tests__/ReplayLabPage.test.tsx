@@ -487,6 +487,40 @@ describe('ReplayLabPage', () => {
       0,
     )
   })
+
+  it('labels simulated replay sessions as fictional workbook data', async () => {
+    window.localStorage.setItem('spy-forecast-lab:simulated-data', '1')
+    renderWithProviders(<ReplayLabPage />)
+
+    expect(
+      await screen.findByRole('status', { name: /simulated workbook data/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/fictional scenario session/i),
+    ).toBeInTheDocument()
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^selected session$/i })).toBeInTheDocument()
+    })
+
+    expect(
+      screen.getByText(/not real SPY history/i),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps historical SPY framing in live mode', async () => {
+    renderWithProviders(<ReplayLabPage />)
+
+    expect(
+      await screen.findByRole('heading', { name: /market replay lab/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('status', { name: /simulated workbook data/i }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/historical SPY session/i),
+    ).toBeInTheDocument()
+  })
 })
 
 /** Commit a confidence value on the range input (user-event is awkward for ranges). */

@@ -159,7 +159,9 @@ export function ForecastDecisionHero({
               ? 'Backend served the last successful cached response.'
               : effectiveMode === 'demo'
                 ? 'Sample fixture; not live data.'
-                : undefined
+                : effectiveMode === 'simulated'
+                  ? 'Synthetic workbook session — not live SPY.'
+                  : undefined
           }
         />
         <MetaItem

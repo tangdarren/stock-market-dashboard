@@ -19,6 +19,8 @@ import {
 } from '@/features/model-monitor/utils/format'
 import { BackendUnavailableError } from '@/lib/api/client'
 import { usePageTitle } from '@/hooks/usePageTitle'
+import { SimulatedDataNotice } from '@/features/simulated/SimulatedDataNotice'
+import { useSimulatedDataMode } from '@/features/simulated/useSimulatedDataMode'
 
 function writeMonitorParams(
   horizon: MonitoringHorizon,
@@ -33,6 +35,7 @@ function writeMonitorParams(
 export function ModelMonitorPage() {
   usePageTitle('Model Monitor')
 
+  const { enabled: simulated } = useSimulatedDataMode()
   const [searchParams, setSearchParams] = useSearchParams()
   const horizon = parseMonitoringHorizon(searchParams.get('horizon'))
   const windowSize = parseMonitoringWindow(searchParams.get('window'))
@@ -83,11 +86,17 @@ export function ModelMonitorPage() {
             Model Monitor
           </h1>
           <p className="mt-4 max-w-2xl text-base text-slate-400">
-            Track rolling out-of-sample performance and feature drift for the SPY direction
-            models. Choose a forecast horizon and session window to inspect the latest health
-            summary against the original holdout baseline.
+            {simulated
+              ? 'Simulated monitoring scores synthetic Forecast_History and Market_Data rows — not live SPY health. Choose a forecast horizon and session window to inspect the scenario summary.'
+              : 'Track rolling out-of-sample performance and feature drift for the SPY direction models. Choose a forecast horizon and session window to inspect the latest health summary against the original holdout baseline.'}
           </p>
         </FadeContent>
+
+        {simulated ? (
+          <FadeContent className="mt-6">
+            <SimulatedDataNotice />
+          </FadeContent>
+        ) : null}
 
         <FadeContent className="mt-10">
           <GlassCard className="p-6 sm:p-8">
@@ -119,6 +128,7 @@ export function ModelMonitorPage() {
                 query.error && !backendUnavailable ? query.error.message : null
               }
               onRetry={retry}
+              simulated={simulated}
             />
           </FadeContent>
         ) : null}
