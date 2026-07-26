@@ -191,8 +191,17 @@ def get_forecast_service(
     return ForecastService(market_service)
 
 
-def get_metrics_payload() -> dict[str, Any] | None:
-    """Read cached metrics JSON from disk. ``None`` if unavailable."""
+def get_metrics_payload(*, simulated: bool = False) -> dict[str, Any] | None:
+    """Read cached metrics JSON from disk, or synthesize from the simulated workbook."""
+    if simulated:
+        from app.ml.simulated import SimulatedDataError
+        from app.ml.simulated_research import get_simulated_metrics_payload
+
+        try:
+            return get_simulated_metrics_payload()
+        except SimulatedDataError:
+            return None
+
     try:
         return read_json("metrics.json")
     except ArtifactMissing:

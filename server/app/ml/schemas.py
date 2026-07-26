@@ -159,7 +159,9 @@ class ReplayMethodologySchema(BaseModel):
     lookback_sessions: int
     min_feature_history: int
     horizons: list[int]
-    prediction_source: Literal["walk_forward_predictions"] = "walk_forward_predictions"
+    prediction_source: Literal[
+        "walk_forward_predictions", "simulated_forecast_history"
+    ] = "walk_forward_predictions"
     feature_engineering: str = "build_features"
 
 
@@ -178,13 +180,14 @@ class ReplaySessionResponse(BaseModel):
     series: list[ReplayChartBarSchema]
     indicators: ReplayIndicatorsSchema | None = None
     horizons: list[int]
-    mode: Literal["historical", "unavailable"]
+    mode: Literal["historical", "unavailable", "simulated"]
     source: str
     methodology: ReplayMethodologySchema
     disclaimer: str
     generated_at: str
     reason: str | None = None
     detail: str | None = None
+    data_classification: str | None = None
 
 
 class ReplayResultApiHorizonSchema(BaseModel):
@@ -216,10 +219,12 @@ class ReplayResultResponse(BaseModel):
     selected_date: str | None = None
     one_day: ReplayResultApiHorizonSchema | None = None
     five_day: ReplayResultApiHorizonSchema | None = None
-    source: Literal["walk_forward_predictions"] = "walk_forward_predictions"
+    source: Literal["walk_forward_predictions", "simulated_workbook"] = (
+        "walk_forward_predictions"
+    )
     evaluation_note: str
     disclaimer: str
-    mode: Literal["historical", "unavailable"]
+    mode: Literal["historical", "unavailable", "simulated"]
     model_version: str | None = None
     model_metadata: ReplayModelMetadataSchema | None = None
     min_eligible_date: str | None = None
@@ -229,6 +234,7 @@ class ReplayResultResponse(BaseModel):
     generated_at: str
     reason: str | None = None
     detail: str | None = None
+    data_classification: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -422,3 +428,7 @@ class ModelMonitoringResponse(BaseModel):
     thresholds: dict[str, dict[str, float]]
     reason: str | None = None
     detail: str | None = None
+    mode: Literal["live", "simulated"] | None = None
+    source: str | None = None
+    disclaimer: str | None = None
+    data_classification: str | None = None

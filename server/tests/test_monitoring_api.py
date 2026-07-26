@@ -370,7 +370,7 @@ def _patch_monitoring_sources(monkeypatch, *, rolling: dict, drift: dict) -> Non
     )
     monkeypatch.setattr(
         "app.services.monitoring_service.load_metrics_baseline",
-        lambda: None,
+        lambda **_kwargs: None,
     )
     monkeypatch.setattr(
         "app.services.monitoring_service.get_model_version",

@@ -198,6 +198,12 @@ def get_simulated_workbook(path: Path | str | None = None) -> SimulatedWorkbook:
 def clear_simulated_workbook_cache() -> None:
     """Drop cached workbook instances (used by tests)."""
     _cached_simulated_workbook.cache_clear()
+    try:
+        from app.ml.simulated_research import clear_simulated_research_caches
+
+        clear_simulated_research_caches()
+    except ImportError:
+        pass
 
 
 

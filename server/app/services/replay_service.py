@@ -46,6 +46,12 @@ from app.ml.replay import (
     nearest_eligible_dates,
     walk_forward_outcome_dates,
 )
+from app.ml.simulated_research import (
+    SIMULATED_MODEL_VERSION,
+    SIMULATED_REPLAY_DISCLAIMER,
+    SIMULATED_REPLAY_EVALUATION_NOTE,
+    SIMULATED_SOURCE,
+)
 from app.services.forecast_service import get_model_version
 from app.services.session import is_trading_day
 
@@ -56,6 +62,9 @@ WALK_FORWARD_FILENAME = "walk_forward_predictions.csv"
 
 REPLAY_MODE = "historical"
 REPLAY_SOURCE = "local_historical_csv"
+SIMULATED_REPLAY_MODE = "simulated"
+SIMULATED_REPLAY_SOURCE = SIMULATED_SOURCE
+SIMULATED_PREDICTION_SOURCE = "simulated_forecast_history"
 
 
 # ---------------------------------------------------------------------------
@@ -85,13 +94,17 @@ class _CacheEntry:
 
 _ohlcv_cache: _CacheEntry | None = None
 _walk_forward_cache: _CacheEntry | None = None
+_sim_ohlcv_cache: _CacheEntry | None = None
+_sim_walk_forward_cache: _CacheEntry | None = None
 
 
 def clear_replay_file_caches() -> None:
-    """Drop cached CSV frames. Intended for tests and rare manual reloads."""
-    global _ohlcv_cache, _walk_forward_cache
+    """Drop cached CSV / workbook frames. Intended for tests and rare reloads."""
+    global _ohlcv_cache, _walk_forward_cache, _sim_ohlcv_cache, _sim_walk_forward_cache
     _ohlcv_cache = None
     _walk_forward_cache = None
+    _sim_ohlcv_cache = None
+    _sim_walk_forward_cache = None
 
 
 # ---------------------------------------------------------------------------
@@ -105,15 +118,21 @@ class ReplayService:
     def __init__(self, *, rng: random.Random | None = None):
         self._rng = rng or random.SystemRandom()
 
-    def list_eligible_sessions(self) -> dict[str, Any]:
+    def list_eligible_sessions(self, *, simulated: bool = False) -> dict[str, Any]:
         """Return ISO dates eligible for replay, or a structured unavailable payload."""
         try:
-            ohlcv, walk_forward, dates = self._load_context()
+            ohlcv, walk_forward, dates = self._load_context(simulated=simulated)
         except _ReplayUnavailable as exc:
-            return _list_unavailable(reason=exc.reason, detail=str(exc))
+            return _list_unavailable(
+                reason=exc.reason, detail=str(exc), simulated=simulated
+            )
         except ValueError as exc:
             logger.warning("Replay eligibility validation failed: %s", exc)
-            return _list_unavailable(reason="walk_forward_artifact_malformed", detail=str(exc))
+            return _list_unavailable(
+                reason="walk_forward_artifact_malformed",
+                detail=str(exc),
+                simulated=simulated,
+            )
 
         if not dates:
             return _list_unavailable(
@@ -122,9 +141,10 @@ class ReplayService:
                     "No historical sessions satisfy both the lookback-window "
                     "requirement and known 1d/5d walk-forward outcomes."
                 ),
+                simulated=simulated,
             )
 
-        return {
+        payload = {
             "available": True,
             "symbol": "SPY",
             "eligible_dates": dates,
@@ -135,17 +155,22 @@ class ReplayService:
             "latest_eligible": dates[-1],
             "min_eligible_date": dates[0],
             "max_eligible_date": dates[-1],
-            "disclaimer": REPLAY_DISCLAIMER,
+            "disclaimer": _replay_disclaimer(simulated),
             "generated_at": _now_iso(),
             "reason": None,
             "detail": None,
+            "mode": SIMULATED_REPLAY_MODE if simulated else REPLAY_MODE,
+            "source": SIMULATED_REPLAY_SOURCE if simulated else REPLAY_SOURCE,
         }
+        if simulated:
+            payload["data_classification"] = "SIMULATED / FICTIONAL"
+        return payload
 
-    def get_session(self, selected_date: str) -> dict[str, Any]:
+    def get_session(self, selected_date: str, *, simulated: bool = False) -> dict[str, Any]:
         """Pre-reveal market context for ``selected_date`` (no model/future labels)."""
         try:
             selected = _parse_selected_date(selected_date)
-            ohlcv, walk_forward, dates = self._load_context()
+            ohlcv, walk_forward, dates = self._load_context(simulated=simulated)
             failure = _classify_date(ohlcv, walk_forward, selected, dates)
             if failure is not None:
                 return _session_unavailable(
@@ -153,6 +178,7 @@ class ReplayService:
                     detail=_reason_detail(failure, selected),
                     selected_date=_format_date(selected),
                     eligible_dates=dates,
+                    simulated=simulated,
                 )
             snapshot = build_replay_snapshot(
                 ohlcv, selected, lookback_sessions=LOOKBACK_SESSIONS
@@ -163,6 +189,7 @@ class ReplayService:
                 detail=str(exc),
                 selected_date=_safe_date_str(selected_date),
                 eligible_dates=[],
+                simulated=simulated,
             )
         except ValueError as exc:
             return _session_unavailable(
@@ -170,20 +197,24 @@ class ReplayService:
                 detail=str(exc),
                 selected_date=_safe_date_str(selected_date),
                 eligible_dates=[],
+                simulated=simulated,
             )
 
-        return _serialize_session(snapshot, eligible_dates=dates)
+        return _serialize_session(
+            snapshot, eligible_dates=dates, simulated=simulated
+        )
 
-    def get_random_session(self) -> dict[str, Any]:
+    def get_random_session(self, *, simulated: bool = False) -> dict[str, Any]:
         """Select one eligible date at random and return the session payload."""
         try:
-            _ohlcv, _walk_forward, dates = self._load_context()
+            _ohlcv, _walk_forward, dates = self._load_context(simulated=simulated)
         except _ReplayUnavailable as exc:
             return _session_unavailable(
                 reason=exc.reason,
                 detail=str(exc),
                 selected_date=None,
                 eligible_dates=[],
+                simulated=simulated,
             )
         except ValueError as exc:
             return _session_unavailable(
@@ -191,6 +222,7 @@ class ReplayService:
                 detail=str(exc),
                 selected_date=None,
                 eligible_dates=[],
+                simulated=simulated,
             )
 
         if not dates:
@@ -202,15 +234,16 @@ class ReplayService:
                 ),
                 selected_date=None,
                 eligible_dates=[],
+                simulated=simulated,
             )
 
-        return self.get_session(self._rng.choice(dates))
+        return self.get_session(self._rng.choice(dates), simulated=simulated)
 
-    def get_result(self, selected_date: str) -> dict[str, Any]:
+    def get_result(self, selected_date: str, *, simulated: bool = False) -> dict[str, Any]:
         """Hidden reveal payload: walk-forward probabilities and realized outcomes."""
         try:
             selected = _parse_selected_date(selected_date)
-            ohlcv, walk_forward, dates = self._load_context()
+            ohlcv, walk_forward, dates = self._load_context(simulated=simulated)
             failure = _classify_date(ohlcv, walk_forward, selected, dates)
             if failure is not None:
                 return _result_unavailable(
@@ -218,6 +251,7 @@ class ReplayService:
                     detail=_reason_detail(failure, selected),
                     selected_date=_format_date(selected),
                     eligible_dates=dates,
+                    simulated=simulated,
                 )
             result = build_replay_result(walk_forward, selected)
         except _ReplayUnavailable as exc:
@@ -226,6 +260,7 @@ class ReplayService:
                 detail=str(exc),
                 selected_date=_safe_date_str(selected_date),
                 eligible_dates=[],
+                simulated=simulated,
             )
         except ValueError as exc:
             return _result_unavailable(
@@ -233,15 +268,18 @@ class ReplayService:
                 detail=str(exc),
                 selected_date=_safe_date_str(selected_date),
                 eligible_dates=[],
+                simulated=simulated,
             )
 
-        return _serialize_result(result)
+        return _serialize_result(
+            result, eligible_dates=dates, simulated=simulated
+        )
 
-    def get_replay(self, selected_date: str) -> dict[str, Any]:
+    def get_replay(self, selected_date: str, *, simulated: bool = False) -> dict[str, Any]:
         """Return both snapshot and result (legacy helper used by unit tests)."""
         try:
             selected = _parse_selected_date(selected_date)
-            ohlcv, walk_forward, dates = self._load_context()
+            ohlcv, walk_forward, dates = self._load_context(simulated=simulated)
             failure = _classify_date(ohlcv, walk_forward, selected, dates)
             if failure is not None:
                 return _bundle_unavailable(
@@ -249,6 +287,7 @@ class ReplayService:
                     detail=_reason_detail(failure, selected),
                     selected_date=_format_date(selected),
                     eligible_dates=dates,
+                    simulated=simulated,
                 )
             bundle = build_replay_bundle(
                 ohlcv,
@@ -263,6 +302,7 @@ class ReplayService:
                 detail=str(exc),
                 selected_date=_safe_date_str(selected_date),
                 eligible_dates=[],
+                simulated=simulated,
             )
         except ValueError as exc:
             return _bundle_unavailable(
@@ -270,13 +310,16 @@ class ReplayService:
                 detail=str(exc),
                 selected_date=_safe_date_str(selected_date),
                 eligible_dates=[],
+                simulated=simulated,
             )
 
-        return _serialize_bundle(bundle)
+        return _serialize_bundle(bundle, simulated=simulated)
 
-    def _load_context(self) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
-        ohlcv = _load_historical_ohlcv()
-        walk_forward = _load_walk_forward()
+    def _load_context(
+        self, *, simulated: bool = False
+    ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+        ohlcv = _load_historical_ohlcv(simulated=simulated)
+        walk_forward = _load_walk_forward(simulated=simulated)
         dates = eligible_replay_dates(
             ohlcv,
             walk_forward,
@@ -291,8 +334,11 @@ class ReplayService:
 # ---------------------------------------------------------------------------
 
 
-def _load_historical_ohlcv() -> pd.DataFrame:
-    """Read + normalize the local SPY CSV, with path/mtime caching."""
+def _load_historical_ohlcv(*, simulated: bool = False) -> pd.DataFrame:
+    """Read + normalize local SPY CSV or simulated Market_Data."""
+    if simulated:
+        return _load_simulated_ohlcv()
+
     global _ohlcv_cache
     csv_path = _config.DATA_RAW_DIR / HISTORICAL_CSV_FILENAME
     if not csv_path.exists():
@@ -331,8 +377,35 @@ def _load_historical_ohlcv() -> pd.DataFrame:
     return canonical
 
 
-def _load_walk_forward() -> pd.DataFrame:
-    """Read the walk-forward predictions artifact, with path/mtime caching."""
+def _load_simulated_ohlcv() -> pd.DataFrame:
+    """Cached Market_Data frame from the simulated workbook."""
+    global _sim_ohlcv_cache
+    from app.ml.simulated import SimulatedDataError, get_simulated_workbook
+
+    try:
+        workbook = get_simulated_workbook()
+    except SimulatedDataError as exc:
+        raise _ReplayUnavailable(exc.message, reason=exc.reason) from exc
+
+    path_str = str(workbook.source_path)
+    mtime_ns = _mtime_ns(workbook.source_path)
+    if (
+        _sim_ohlcv_cache is not None
+        and _sim_ohlcv_cache.path == path_str
+        and _sim_ohlcv_cache.mtime_ns == mtime_ns
+    ):
+        return _sim_ohlcv_cache.frame
+
+    frame = workbook.market_data.copy()
+    _sim_ohlcv_cache = _CacheEntry(path=path_str, mtime_ns=mtime_ns, frame=frame)
+    return frame
+
+
+def _load_walk_forward(*, simulated: bool = False) -> pd.DataFrame:
+    """Read walk-forward artifact or simulated Forecast_History."""
+    if simulated:
+        return _load_simulated_walk_forward()
+
     global _walk_forward_cache
     path = _config.ARTIFACTS_DIR / WALK_FORWARD_FILENAME
     if not path.exists():
@@ -370,6 +443,30 @@ def _load_walk_forward() -> pd.DataFrame:
         ) from exc
 
     _walk_forward_cache = _CacheEntry(path=path_str, mtime_ns=mtime_ns, frame=frame)
+    return frame
+
+
+def _load_simulated_walk_forward() -> pd.DataFrame:
+    """Cached Forecast_History frame from the simulated workbook."""
+    global _sim_walk_forward_cache
+    from app.ml.simulated import SimulatedDataError, get_simulated_workbook
+
+    try:
+        workbook = get_simulated_workbook()
+    except SimulatedDataError as exc:
+        raise _ReplayUnavailable(exc.message, reason=exc.reason) from exc
+
+    path_str = str(workbook.source_path)
+    mtime_ns = _mtime_ns(workbook.source_path)
+    if (
+        _sim_walk_forward_cache is not None
+        and _sim_walk_forward_cache.path == path_str
+        and _sim_walk_forward_cache.mtime_ns == mtime_ns
+    ):
+        return _sim_walk_forward_cache.frame
+
+    frame = workbook.forecast_history.copy()
+    _sim_walk_forward_cache = _CacheEntry(path=path_str, mtime_ns=mtime_ns, frame=frame)
     return frame
 
 
@@ -462,10 +559,33 @@ def _reason_detail(reason: str, selected: pd.Timestamp) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _replay_disclaimer(simulated: bool) -> str:
+    return SIMULATED_REPLAY_DISCLAIMER if simulated else REPLAY_DISCLAIMER
+
+
+def _replay_evaluation_note(simulated: bool) -> str:
+    return SIMULATED_REPLAY_EVALUATION_NOTE if simulated else REPLAY_EVALUATION_NOTE
+
+
+def _prediction_source(simulated: bool) -> str:
+    return SIMULATED_PREDICTION_SOURCE if simulated else "walk_forward_predictions"
+
+
+def _mode_label(simulated: bool, *, available: bool) -> str:
+    if not available:
+        return "unavailable"
+    return SIMULATED_REPLAY_MODE if simulated else REPLAY_MODE
+
+
+def _source_label(simulated: bool) -> str:
+    return SIMULATED_REPLAY_SOURCE if simulated else REPLAY_SOURCE
+
+
 def _serialize_session(
     snapshot: ReplaySnapshot,
     *,
     eligible_dates: list[str],
+    simulated: bool = False,
 ) -> dict[str, Any]:
     selected_bar = snapshot.sessions[-1] if snapshot.sessions else None
     series = [
@@ -492,7 +612,7 @@ def _serialize_session(
         }
 
     before, after = nearest_eligible_dates(eligible_dates, snapshot.selected_date)
-    return {
+    payload = {
         "available": True,
         "symbol": "SPY",
         "selected_date": snapshot.selected_date,
@@ -505,40 +625,55 @@ def _serialize_session(
         "series": series,
         "indicators": indicators,
         "horizons": list(SUPPORTED_HORIZONS),
-        "mode": REPLAY_MODE,
-        "source": REPLAY_SOURCE,
+        "mode": _mode_label(simulated, available=True),
+        "source": _source_label(simulated),
         "methodology": {
             "summary": REPLAY_METHODOLOGY,
             "lookback_sessions": LOOKBACK_SESSIONS,
             "min_feature_history": MIN_FEATURE_HISTORY,
             "horizons": list(SUPPORTED_HORIZONS),
-            "prediction_source": "walk_forward_predictions",
+            "prediction_source": _prediction_source(simulated),
             "feature_engineering": "build_features",
         },
-        "disclaimer": REPLAY_DISCLAIMER,
+        "disclaimer": _replay_disclaimer(simulated),
         "generated_at": _now_iso(),
         "reason": None,
         "detail": None,
     }
+    if simulated:
+        payload["data_classification"] = "SIMULATED / FICTIONAL"
+    return payload
 
 
-def _serialize_result(result: ReplayResult) -> dict[str, Any]:
-    return {
+def _serialize_result(
+    result: ReplayResult,
+    *,
+    eligible_dates: list[str] | None = None,
+    simulated: bool = False,
+) -> dict[str, Any]:
+    eligible_dates = eligible_dates or []
+    payload = {
         "available": True,
         "symbol": "SPY",
         "selected_date": result.selected_date,
         "one_day": _serialize_horizon(result.one_day.to_dict()),
         "five_day": _serialize_horizon(result.five_day.to_dict()),
-        "source": result.source,
-        "evaluation_note": REPLAY_EVALUATION_NOTE,
-        "disclaimer": REPLAY_DISCLAIMER,
-        "mode": REPLAY_MODE,
-        "model_version": get_model_version(),
-        "model_metadata": _walk_forward_model_metadata(),
+        "source": SIMULATED_SOURCE if simulated else result.source,
+        "evaluation_note": _replay_evaluation_note(simulated),
+        "disclaimer": _replay_disclaimer(simulated),
+        "mode": _mode_label(simulated, available=True),
+        "model_version": (
+            SIMULATED_MODEL_VERSION if simulated else get_model_version()
+        ),
+        "model_metadata": _walk_forward_model_metadata(simulated=simulated),
         "generated_at": _now_iso(),
         "reason": None,
         "detail": None,
     }
+    payload.update(_neighbor_fields(eligible_dates, result.selected_date))
+    if simulated:
+        payload["data_classification"] = "SIMULATED / FICTIONAL"
+    return payload
 
 
 def _serialize_horizon(horizon: dict[str, Any]) -> dict[str, Any]:
@@ -554,23 +689,45 @@ def _serialize_horizon(horizon: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _serialize_bundle(bundle: ReplayBundle) -> dict[str, Any]:
-    return {
+def _serialize_bundle(
+    bundle: ReplayBundle, *, simulated: bool = False
+) -> dict[str, Any]:
+    payload = {
         "available": True,
         "symbol": "SPY",
         "selected_date": bundle.snapshot.selected_date,
         "lookback_sessions": bundle.snapshot.lookback_sessions,
         "snapshot": bundle.snapshot.to_dict(),
         "result": bundle.result.to_dict(),
-        "disclaimer": REPLAY_DISCLAIMER,
+        "disclaimer": _replay_disclaimer(simulated),
         "generated_at": _now_iso(),
         "reason": None,
         "detail": None,
+        "mode": _mode_label(simulated, available=True),
+        "source": _source_label(simulated),
     }
+    if simulated:
+        payload["data_classification"] = "SIMULATED / FICTIONAL"
+        payload["result"] = {
+            **payload["result"],
+            "source": SIMULATED_SOURCE,
+        }
+    return payload
 
 
-def _walk_forward_model_metadata() -> dict[str, Any] | None:
+def _walk_forward_model_metadata(*, simulated: bool = False) -> dict[str, Any] | None:
     """Best-effort walk-forward / holdout metadata from training artifacts."""
+    if simulated:
+        return {
+            "holdout_start": None,
+            "holdout_end": None,
+            "model_name_1d": "simulated_scenario",
+            "model_name_5d": "simulated_scenario",
+            "n_holdout_1d": None,
+            "n_holdout_5d": None,
+            "evaluation": "simulated_forecast_history",
+        }
+
     try:
         meta = read_json("training_metadata.json")
     except ArtifactMissing:
@@ -616,6 +773,7 @@ def _session_unavailable(
     detail: str,
     selected_date: str | None,
     eligible_dates: list[str],
+    simulated: bool = False,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "available": False,
@@ -627,20 +785,22 @@ def _session_unavailable(
         "indicators": None,
         "horizons": list(SUPPORTED_HORIZONS),
         "mode": "unavailable",
-        "source": REPLAY_SOURCE,
+        "source": _source_label(simulated),
         "methodology": {
             "summary": REPLAY_METHODOLOGY,
             "lookback_sessions": LOOKBACK_SESSIONS,
             "min_feature_history": MIN_FEATURE_HISTORY,
             "horizons": list(SUPPORTED_HORIZONS),
-            "prediction_source": "walk_forward_predictions",
+            "prediction_source": _prediction_source(simulated),
             "feature_engineering": "build_features",
         },
-        "disclaimer": REPLAY_DISCLAIMER,
+        "disclaimer": _replay_disclaimer(simulated),
         "generated_at": _now_iso(),
         "reason": reason,
         "detail": detail,
     }
+    if simulated:
+        payload["data_classification"] = "SIMULATED / FICTIONAL"
     payload.update(_neighbor_fields(eligible_dates, selected_date))
     return payload
 
@@ -651,6 +811,7 @@ def _result_unavailable(
     detail: str,
     selected_date: str | None,
     eligible_dates: list[str],
+    simulated: bool = False,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "available": False,
@@ -658,16 +819,20 @@ def _result_unavailable(
         "selected_date": selected_date,
         "one_day": None,
         "five_day": None,
-        "source": "walk_forward_predictions",
-        "evaluation_note": REPLAY_EVALUATION_NOTE,
-        "disclaimer": REPLAY_DISCLAIMER,
+        "source": SIMULATED_SOURCE if simulated else "walk_forward_predictions",
+        "evaluation_note": _replay_evaluation_note(simulated),
+        "disclaimer": _replay_disclaimer(simulated),
         "mode": "unavailable",
-        "model_version": get_model_version(),
+        "model_version": (
+            SIMULATED_MODEL_VERSION if simulated else get_model_version()
+        ),
         "model_metadata": None,
         "generated_at": _now_iso(),
         "reason": reason,
         "detail": detail,
     }
+    if simulated:
+        payload["data_classification"] = "SIMULATED / FICTIONAL"
     payload.update(_neighbor_fields(eligible_dates, selected_date))
     return payload
 
@@ -678,6 +843,7 @@ def _bundle_unavailable(
     detail: str,
     selected_date: str | None,
     eligible_dates: list[str],
+    simulated: bool = False,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "available": False,
@@ -686,17 +852,26 @@ def _bundle_unavailable(
         "lookback_sessions": LOOKBACK_SESSIONS,
         "snapshot": None,
         "result": None,
-        "disclaimer": REPLAY_DISCLAIMER,
+        "disclaimer": _replay_disclaimer(simulated),
         "generated_at": _now_iso(),
         "reason": reason,
         "detail": detail,
+        "mode": "unavailable",
+        "source": _source_label(simulated),
     }
+    if simulated:
+        payload["data_classification"] = "SIMULATED / FICTIONAL"
     payload.update(_neighbor_fields(eligible_dates, selected_date))
     return payload
 
 
-def _list_unavailable(*, reason: str, detail: str) -> dict[str, Any]:
-    return {
+def _list_unavailable(
+    *,
+    reason: str,
+    detail: str,
+    simulated: bool = False,
+) -> dict[str, Any]:
+    payload = {
         "available": False,
         "symbol": "SPY",
         "eligible_dates": [],
@@ -707,11 +882,20 @@ def _list_unavailable(*, reason: str, detail: str) -> dict[str, Any]:
         "latest_eligible": None,
         "min_eligible_date": None,
         "max_eligible_date": None,
-        "disclaimer": REPLAY_DISCLAIMER,
+        "disclaimer": _replay_disclaimer(simulated),
         "generated_at": _now_iso(),
         "reason": reason,
         "detail": detail,
+        "mode": "unavailable",
+        "source": _source_label(simulated),
     }
+    if simulated:
+        payload["data_classification"] = "SIMULATED / FICTIONAL"
+    return payload
+
+
+def _format_date(value: Any) -> str:
+    return pd.Timestamp(value).normalize().date().isoformat()
 
 
 def _classify_value_error(message: str) -> str:
@@ -757,10 +941,6 @@ def _safe_date_str(value: str | None) -> str | None:
         return str(value)
 
 
-def _format_date(value: Any) -> str:
-    return pd.Timestamp(value).normalize().date().isoformat()
-
-
 def _mtime_ns(path: Path) -> int:
     return path.stat().st_mtime_ns
 
@@ -778,6 +958,8 @@ __all__ = [
     "HISTORICAL_CSV_FILENAME",
     "REPLAY_MODE",
     "REPLAY_SOURCE",
+    "SIMULATED_REPLAY_MODE",
+    "SIMULATED_REPLAY_SOURCE",
     "WALK_FORWARD_FILENAME",
     "ReplayService",
     "clear_replay_file_caches",

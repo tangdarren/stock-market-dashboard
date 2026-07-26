@@ -36,6 +36,11 @@ from app.ml.monitoring import (
     performance_health_signals,
     rank_feature_drift,
 )
+from app.ml.simulated_research import (
+    SIMULATED_MODEL_VERSION,
+    SIMULATED_MONITORING_DISCLAIMER,
+    SIMULATED_SOURCE,
+)
 from app.services.forecast_service import get_model_version
 
 MonitoringHorizon = Literal["1d", "5d"]
@@ -74,8 +79,9 @@ def _unavailable(
     reason: str,
     detail: str,
     status_reasons: list[dict[str, Any]] | None = None,
+    simulated: bool = False,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "available": False,
         "status": None,
         "status_explanation": detail,
@@ -105,23 +111,36 @@ def _unavailable(
             "feature_window_start": None,
             "feature_window_end": None,
         },
-        "model_version": get_model_version(),
+        "model_version": SIMULATED_MODEL_VERSION if simulated else get_model_version(),
         "thresholds": MONITORING_THRESHOLDS,
         "reason": reason,
         "detail": detail,
+        "mode": "simulated" if simulated else "live",
+        "source": SIMULATED_SOURCE if simulated else "local_artifacts",
     }
+    if simulated:
+        payload["disclaimer"] = SIMULATED_MONITORING_DISCLAIMER
+        payload["data_classification"] = "SIMULATED / FICTIONAL"
+    return payload
 
 
 class MonitoringService:
     """Assemble the Model Health and Drift Center API payload."""
 
-    def get_monitoring(self, *, horizon: str, window: int) -> dict[str, Any]:
+    def get_monitoring(
+        self,
+        *,
+        horizon: str,
+        window: int,
+        simulated: bool = False,
+    ) -> dict[str, Any]:
         horizon_days = _parse_horizon(horizon)
         window = _parse_window(window)
 
         rolling = get_rolling_model_performance(
             windows=(window,),
             horizons=(horizon_days,),
+            simulated=simulated,
         )
         if not rolling.get("available"):
             return _unavailable(
@@ -133,9 +152,14 @@ class MonitoringService:
                     rolling.get("detail")
                     or "Out-of-sample monitoring artifacts are unavailable."
                 ),
+                simulated=simulated,
             )
 
-        drift = get_feature_drift(windows=(window,), horizons=(horizon_days,))
+        drift = get_feature_drift(
+            windows=(window,),
+            horizons=(horizon_days,),
+            simulated=simulated,
+        )
         drift_available = bool(drift.get("available"))
         drift_reason = str(drift.get("reason") or "monitoring_reference_missing")
         drift_detail = str(
@@ -199,6 +223,7 @@ class MonitoringService:
                 reason="insufficient_observations",
                 detail=detail,
                 status_reasons=secondary_reasons,
+                simulated=simulated,
             )
             payload["observation_counts"] = {
                 "rolling_window": window,
@@ -226,6 +251,7 @@ class MonitoringService:
                 window=window,
                 reason="insufficient_observations",
                 detail=status_explanation,
+                simulated=simulated,
             )
 
         if not drift_available:
@@ -269,15 +295,15 @@ class MonitoringService:
                 "feature_schema_fingerprint": drift.get("feature_schema_fingerprint"),
             }
 
-        metrics_payload = load_metrics_baseline()
+        metrics_payload = load_metrics_baseline(simulated=simulated)
         reference_payload = None
         if drift_available:
             try:
-                reference_payload = load_monitoring_reference()
+                reference_payload = load_monitoring_reference(simulated=simulated)
             except MonitoringError:
                 reference_payload = None
 
-        return {
+        payload = {
             "available": True,
             "status": status,
             "status_explanation": status_explanation,
@@ -309,11 +335,19 @@ class MonitoringService:
                 "feature_window_start": drift_window.get("start_date"),
                 "feature_window_end": drift_window.get("end_date"),
             },
-            "model_version": get_model_version(),
+            "model_version": (
+                SIMULATED_MODEL_VERSION if simulated else get_model_version()
+            ),
             "thresholds": MONITORING_THRESHOLDS,
             "reason": None if drift_available else drift_reason,
             "detail": None if drift_available else drift_detail,
+            "mode": "simulated" if simulated else "live",
+            "source": SIMULATED_SOURCE if simulated else "local_artifacts",
         }
+        if simulated:
+            payload["disclaimer"] = SIMULATED_MONITORING_DISCLAIMER
+            payload["data_classification"] = "SIMULATED / FICTIONAL"
+        return payload
 
 
 def get_monitoring_service() -> MonitoringService:

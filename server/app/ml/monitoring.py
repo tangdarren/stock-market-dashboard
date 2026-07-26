@@ -130,13 +130,17 @@ def extract_holdout_baseline(metrics: dict[str, Any], horizon_days: int) -> dict
     holdout = block.get("holdout") or {}
     accuracy = holdout.get("accuracy")
     brier = holdout.get("brier")
+    ece = holdout.get("ece")
+    avg_conf = holdout.get("average_predicted_confidence")
     accuracy_f = float(accuracy) if accuracy is not None else None
     brier_f = float(brier) if brier is not None else None
+    ece_f = float(ece) if ece is not None else None
+    avg_conf_f = float(avg_conf) if avg_conf is not None else None
     return {
         "accuracy": accuracy_f,
         "brier": brier_f,
-        "ece": None,
-        "average_predicted_confidence": None,
+        "ece": ece_f,
+        "average_predicted_confidence": avg_conf_f,
         "actual_accuracy": accuracy_f,
         "n_observations": holdout.get("n_observations"),
         "test_period_start": holdout.get("test_period_start"),
@@ -290,8 +294,16 @@ def compute_rolling_model_performance(
     }
 
 
-def load_walk_forward_predictions() -> pd.DataFrame:
-    """Load and validate ``walk_forward_predictions.csv`` from the artifacts dir."""
+def load_walk_forward_predictions(*, simulated: bool = False) -> pd.DataFrame:
+    """Load walk-forward rows from live artifacts or the simulated workbook."""
+    if simulated:
+        from app.ml.simulated import SimulatedDataError, get_simulated_workbook
+
+        try:
+            return get_simulated_workbook().forecast_history.copy()
+        except SimulatedDataError as exc:
+            raise MonitoringError(exc.message, reason=exc.reason) from exc
+
     path = artifact_path(WALK_FORWARD_FILENAME)
     if not path.exists():
         raise MonitoringError(
@@ -315,8 +327,17 @@ def load_walk_forward_predictions() -> pd.DataFrame:
         ) from exc
 
 
-def load_metrics_baseline() -> dict[str, Any] | None:
-    """Read ``metrics.json`` if present; ``None`` when absent."""
+def load_metrics_baseline(*, simulated: bool = False) -> dict[str, Any] | None:
+    """Read ``metrics.json`` or synthesize from the simulated workbook."""
+    if simulated:
+        from app.ml.simulated import SimulatedDataError
+        from app.ml.simulated_research import get_simulated_metrics_payload
+
+        try:
+            return get_simulated_metrics_payload()
+        except SimulatedDataError:
+            return None
+
     try:
         return read_json(METRICS_FILENAME)
     except ArtifactMissing:
@@ -327,10 +348,11 @@ def get_rolling_model_performance(
     *,
     windows: tuple[int, ...] = DEFAULT_WINDOWS,
     horizons: tuple[int, ...] = SUPPORTED_HORIZONS,
+    simulated: bool = False,
 ) -> dict[str, Any]:
     """Load artifacts and return rolling performance or a truthful unavailable payload."""
     try:
-        walk_forward = load_walk_forward_predictions()
+        walk_forward = load_walk_forward_predictions(simulated=simulated)
     except MonitoringError as exc:
         return {
             "available": False,
@@ -341,7 +363,7 @@ def get_rolling_model_performance(
             "detail": exc.message,
         }
 
-    metrics = load_metrics_baseline()
+    metrics = load_metrics_baseline(simulated=simulated)
     try:
         return compute_rolling_model_performance(
             walk_forward,
@@ -1096,8 +1118,23 @@ def compute_feature_drift(
     }
 
 
-def load_monitoring_reference() -> dict[str, Any]:
-    """Load ``monitoring_reference.json`` from the artifacts directory."""
+def load_monitoring_reference(*, simulated: bool = False) -> dict[str, Any]:
+    """Load ``monitoring_reference.json`` or synthesize from the simulated workbook."""
+    if simulated:
+        from app.ml.simulated import SimulatedDataError
+        from app.ml.simulated_research import get_simulated_monitoring_reference_payload
+
+        try:
+            payload = get_simulated_monitoring_reference_payload()
+        except SimulatedDataError as exc:
+            raise MonitoringError(exc.message, reason=exc.reason) from exc
+        if not isinstance(payload, dict) or "horizons" not in payload:
+            raise MonitoringError(
+                "Simulated monitoring reference is malformed: missing horizons block.",
+                reason="monitoring_reference_malformed",
+            )
+        return payload
+
     try:
         payload = read_json(MONITORING_REFERENCE_FILENAME)
     except ArtifactMissing as exc:
@@ -1118,8 +1155,21 @@ def load_monitoring_reference() -> dict[str, Any]:
     return payload
 
 
-def load_recent_engineered_features(*, min_rows: int = 1) -> pd.DataFrame:
-    """Build complete feature rows from the local SPY history CSV."""
+def load_recent_engineered_features(
+    *,
+    min_rows: int = 1,
+    simulated: bool = False,
+) -> pd.DataFrame:
+    """Build complete feature rows from local SPY history or the simulated workbook."""
+    if simulated:
+        from app.ml.simulated import SimulatedDataError
+        from app.ml.simulated_research import load_simulated_engineered_features
+
+        try:
+            return load_simulated_engineered_features(min_rows=min_rows)
+        except SimulatedDataError as exc:
+            raise MonitoringError(exc.message, reason=exc.reason) from exc
+
     path = Path(_config.DATA_RAW_DIR) / HISTORICAL_CSV_FILENAME
     if not path.exists():
         raise MonitoringError(
@@ -1150,10 +1200,11 @@ def get_feature_drift(
     *,
     windows: tuple[int, ...] = DEFAULT_WINDOWS,
     horizons: tuple[int, ...] = SUPPORTED_HORIZONS,
+    simulated: bool = False,
 ) -> dict[str, Any]:
     """Load reference + recent features and return PSI drift scores."""
     try:
-        reference = load_monitoring_reference()
+        reference = load_monitoring_reference(simulated=simulated)
     except MonitoringError as exc:
         return {
             "available": False,
@@ -1166,7 +1217,7 @@ def get_feature_drift(
         }
 
     try:
-        recent = load_recent_engineered_features(min_rows=1)
+        recent = load_recent_engineered_features(min_rows=1, simulated=simulated)
     except MonitoringError as exc:
         return {
             "available": False,
