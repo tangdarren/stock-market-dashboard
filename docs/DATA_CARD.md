@@ -1,191 +1,83 @@
 # Data Card — SPY daily OHLCV
 
-## Overview
+Tempest is built around one time series: daily OHLCV for SPY (SPDR S&P 500 ETF). Live mode and simulated mode share the same normalized schema, but they pull from different sources and must never be mixed silently.
 
-This project consumes a single time series: **daily OHLCV for the SPDR S&P 500
-ETF (SPY)**. Two independent sources are used, both configured to return the
-**unadjusted** convention:
+## Live market data
 
-| Purpose            | Source                            | Convention  | Cache TTL       |
-|--------------------|-----------------------------------|-------------|-----------------|
-| Training bootstrap | Yahoo Finance (via `yfinance`)    | Unadjusted  | Local CSV       |
-| Runtime inference  | Alpha Vantage `TIME_SERIES_DAILY` | Unadjusted  | 6 h (SQLite)    |
-| Optional context   | Alpha Vantage `NEWS_SENTIMENT`    | N/A         | 4 h (SQLite)    |
+Two real-world sources are used, both configured for the **unadjusted** OHLCV convention:
 
-## Schema
+- **Training bootstrap** — Yahoo Finance via `yfinance` with `auto_adjust=False`. Written once to a local CSV under `server/data/raw/` (git-ignored).
+- **Runtime inference** — Alpha Vantage `TIME_SERIES_DAILY`, cached in SQLite for about 6 hours.
+- **Optional news context** — Alpha Vantage `NEWS_SENTIMENT`, cached for about 4 hours. News is shown for context only and is not an input to the forecasting models.
 
-After normalization every OHLCV frame has these columns:
+Unadjusted prices keep training and inference speaking the same dialect. Splits and dividends do not rewrite historical bars. Features are mostly percent changes and distances from moving averages, so absolute price level differences after corporate actions do not dominate learning. If you ever switch to adjusted prices, retrain everything under that same convention on both sides.
 
-| Column   | Type            | Description                                     |
-|----------|-----------------|-------------------------------------------------|
-| `date`   | `datetime[ns]`  | Trading date, midnight, tz-naive (America/NY). |
-| `open`   | `float64`       | Session opening price (unadjusted).             |
-| `high`   | `float64`       | Session high (unadjusted).                      |
-| `low`    | `float64`       | Session low (unadjusted).                       |
-| `close`  | `float64`       | Session close (unadjusted).                     |
-| `volume` | `int64`         | Session share volume.                           |
+Yahoo data is for offline bootstrap only; this repo does not redistribute it. Alpha Vantage usage follows [their terms](https://www.alphavantage.co/terms_of_service/). API keys stay in `server/.env`, never in git or the frontend bundle.
 
-Duplicates are collapsed (last write wins). Rows sort ascending by date.
+Free-tier Alpha Vantage traffic is rate-limited in the backend (default daily budget `20`, minimum interval `15s`). On throttle envelopes or transport failures, the API may return the last successful cache with `mode: "stale"` so the UI can label it clearly instead of pretending the feed is fresh.
 
-## Adjustment convention
+## Simulated Excel workbook
 
-Both sources are configured to return **unadjusted** OHLC. Corporate actions
-(splits, dividends) therefore do NOT rewrite historical bars. This matters:
+Simulated mode reads a fictional workbook at `server/data/simulated/spy_simulated_market_data.xlsx`. It exists for local development, UI demos, and automated tests.
 
-- Consistency between training and inference is preserved.
-- A split makes the historical `close` look "large" relative to the current
-  `close` — that's expected under the unadjusted convention. Features are
-  normalized (percent changes, distances from moving averages) so they are
-  scale-free and this does not distort learning.
-- If you want adjusted prices, retrain **all** models with the same
-  adjustment convention on both sides.
+The workbook is loaded only when the caller explicitly requests simulated mode (the visible **Simulated data** switch). Live Alpha Vantage failures do **not** fall through to this file. Every value is synthetic — not SPY, not Alpha Vantage, not Yahoo Finance — and the UI labels simulated responses accordingly.
 
-## Provenance and licensing
+Sheets used at runtime include `Scenario`, `Market_Data`, `Forecast_History`, `News_Context`, and `Scenario_Labels`, with optional `Data_Dictionary` and `Current_Forecast` fixtures. Market rows are normalized through the same OHLCV pipeline as live data so charting and feature code stay consistent.
 
-- **Yahoo Finance:** used for the one-time offline training bootstrap only.
-  Redistribution of raw Yahoo data is discouraged; the bootstrap script
-  stores the result under `server/data/raw/` which is git-ignored.
-- **Alpha Vantage:** subject to
-  [Alpha Vantage's terms](https://www.alphavantage.co/terms_of_service/).
-  API keys are personal and rate-limited. Keys live only in `server/.env`,
-  never in git or in the frontend bundle.
-- **This project** does not redistribute either dataset.
+## Schema and conventions
 
-## Rate limiting and freshness
+After `normalize_ohlcv`, every OHLCV frame has:
 
-- Alpha Vantage free tier: 25 requests/day, ~5 requests/minute. The backend
-  enforces a configurable **daily budget** (default `20`) and **minimum
-  interval** (default `15s`) via persistent SQLite counters.
-- The market snapshot cache TTL is 6 hours; the news cache TTL is 4 hours.
-- When Alpha Vantage returns a throttle envelope (`Note`, `Information`) or
-  transport failure, the backend returns the last successful cached response
-  with `mode: "stale"` and the UI marks it clearly.
+| Column   | Type           | Notes |
+|----------|----------------|-------|
+| `date`   | `datetime[ns]` | Trading date at midnight, tz-naive, representing America/New_York calendar dates |
+| `open`   | `float64`      | Unadjusted session open |
+| `high`   | `float64`      | Unadjusted session high |
+| `low`    | `float64`      | Unadjusted session low |
+| `close`  | `float64`      | Unadjusted session close |
+| `volume` | `int64`        | Session share volume |
 
-## Data lineage
+Duplicates collapse (last write wins). Rows sort ascending by date. Forecasts and analogues use the latest **completed** session only — weekends, holidays, and partial intraday bars are out of scope.
+
+## How data flows into models
 
 ```
 [ Yahoo Finance ]                       [ Alpha Vantage ]
-       │  auto_adjust=False                    │  TIME_SERIES_DAILY (compact)
+       │  auto_adjust=False                    │  TIME_SERIES_DAILY
        ▼                                       ▼
-[ normalize_ohlcv ]  ─────────►  canonical OHLCV frame  ◄─────────  [ normalize_ohlcv ]
+[ normalize_ohlcv ]  ─────────►  canonical OHLCV  ◄─────────  [ normalize_ohlcv ]
                                        │
                        ┌───────────────┼───────────────┐
                        ▼                               ▼
-              [ build_features ]              (runtime inference:
-                       │                       latest completed
-                       ▼                       session only, no
-              [ add_targets ]                  partial intraday bars)
+              [ build_features ]              runtime: latest completed
+                       │                       session only
+                       ▼
+              [ add_targets ]
                        │
                        ▼
-              [ train_models.py ]
-                       │
-                       ▼
-              server/artifacts/*.joblib + metrics.json + walk_forward_predictions.csv
+              [ train_models.py ] → server/artifacts/
 ```
 
-## Historical analogue engine — data usage
+In simulated mode, `Market_Data` / `Forecast_History` (and related sheets) substitute for the Yahoo/Alpha Vantage path after the same normalization step.
 
-The analogue engine at `server/app/ml/analogues.py` performs a **descriptive**
-nearest-neighbor search over prior completed SPY sessions. It does not train
-or update any model.
+## Look-ahead protection and date handling
 
-### Runtime vs training data
+Feature engineering only uses information available through session `t`. Targets look forward (`close[t+h]`), but those future columns stay `NaN` until the horizon is observable and are filtered out before training. Realized forward returns are named `realized_future_return_{h}d` so they cannot overwrite the backward-looking `return_{h}d` feature — that naming bug was an easy way to leak labels, and there is an explicit guard against it.
 
-| Purpose                              | Source                             | Location                          |
-|--------------------------------------|------------------------------------|-----------------------------------|
-| Historical candidate pool            | Local CSV from bootstrap           | `server/data/raw/spy_daily.csv`   |
-| Latest completed-session query row   | Cached Alpha Vantage snapshot      | Same 6 h SQLite cache as `/market/spy` — no extra API request. |
+The historical analogue engine is stricter still: candidates must fall strictly before the query date, sit outside a 20-calendar-day separation window, and already have observed one-day and five-day outcomes. Standardization statistics are fit on eligible candidates only; the query row never contributes to them.
 
-The runtime query row is engineered with the same
-`server/app/ml/features.py` pipeline that produced the historical feature
-frame, then validated against the analogue feature schema before any distance
-is computed. A missing or non-numeric feature raises rather than silently
-becoming an imputed value.
+## Historical analogues
 
-### Fields used for similarity
+Analogues are a descriptive nearest-neighbor lookup over prior completed sessions (`server/app/ml/analogues.py`). The candidate pool comes from the local bootstrap CSV (`server/data/raw/spy_daily.csv`). The query row is the latest completed session from the cached Alpha Vantage snapshot (same 6-hour market cache — no extra API call). Features are engineered with the shared `features.py` pipeline and validated before distance is computed; missing values raise instead of being quietly imputed.
 
-| Feature                       | Description                                                      |
-|-------------------------------|------------------------------------------------------------------|
-| `return_1d_lag`               | Prior session's simple return.                                   |
-| `return_5d`                   | Trailing 5-session simple return.                                |
-| `return_10d`                  | Trailing 10-session simple return.                               |
-| `distance_from_sma_20`        | Close relative to the 20-session simple moving average.          |
-| `distance_from_sma_50`        | Close relative to the 50-session simple moving average.          |
-| `rsi_14`                      | 14-period Relative Strength Index.                               |
-| `rolling_vol_20`              | 20-session rolling standard deviation of daily returns.          |
-| `opening_gap_pct`             | Overnight opening gap as a fraction of prior close.              |
-| `volume_to_20d_avg`           | Session volume divided by trailing 20-session mean volume.       |
-| `bollinger_band_position_20`  | Close position inside the 20-session Bollinger band envelope.    |
-| `macd`                        | MACD line (short EMA − long EMA).                                |
+Similarity uses these columns (all from the shared feature builder):
 
-Every column is produced by the shared feature builder; the analogue engine
-never re-derives formulas.
+`return_1d_lag`, `return_5d`, `return_10d`, `distance_from_sma_20`, `distance_from_sma_50`, `rsi_14`, `rolling_vol_20`, `opening_gap_pct`, `volume_to_20d_avg`, `bollinger_band_position_20`, `macd`.
 
-### Candidate-session eligibility
+Distance is Euclidean in standardized space, mapped to a 0–100 similarity score for display. Each analogue reports its date, similarity/distance, close, realized one- and five-session returns and directions, plus a few context fields (RSI, volatility, SMA distance, relative volume). Aggregate summaries include how often analogues finished up over each horizon and typical realized returns.
 
-For a query session with date `q`, a historical row `t` is eligible only if
-**all** of the following hold:
-
-1. **Temporal ordering.** `t < q`. The engine strictly refuses to look
-   forward.
-2. **Temporal separation.** `abs(q − t)` in calendar days is at least
-   **`MINIMUM_SEPARATION_DAYS = 20`** (implemented as `pd.Timedelta(days=20)`).
-   This is deliberately wider than a five-session horizon so the query cannot
-   approximately match itself and a candidate's five-day realized return
-   cannot overlap the query horizon.
-3. **Realized outcomes known.** Both `realized_future_return_1d` and
-   `realized_future_return_5d` must be non-`NaN`. Rows without observed
-   future outcomes are dropped — the engine never reports an analogue whose
-   forward return is unobserved.
-4. **Complete feature vector.** Every analogue feature listed above must be
-   present and finite for row `t`. Rows with any missing analogue feature
-   are excluded from the pool.
-
-### Standardization methodology
-
-- Mean and standard deviation are computed on **eligible candidate rows only**.
-- Features with zero standard deviation over the eligible pool are left
-  unscaled (division by zero is guarded).
-- The query vector is transformed with **those same statistics** and never
-  contributes to them.
-- Distance is Euclidean in the standardized feature space; a distance-to-
-  similarity mapping projects the score onto a 0–100 scale for display.
-
-### Output fields per analogue
-
-| Field                   | Description                                              |
-|-------------------------|----------------------------------------------------------|
-| `date`                  | Analogue session's trading date (ISO).                   |
-| `similarity`            | 0–100 score, monotonically decreasing in raw distance.   |
-| `distance`              | Raw Euclidean distance in the standardized space.        |
-| `close`                 | Session close price.                                     |
-| `return_1d`             | Realized one-session-ahead simple return.                |
-| `return_5d`             | Realized five-session-ahead simple return.               |
-| `direction_1d`          | `"up"` if `return_1d > 0`, else `"down"`.                |
-| `direction_5d`          | `"up"` if `return_5d > 0`, else `"down"`.                |
-| `rsi_14`                | Analogue-session RSI value.                              |
-| `rolling_vol_20`        | Analogue-session 20-day volatility.                      |
-| `distance_from_sma_20`  | Analogue-session distance from its 20-day SMA.           |
-| `relative_volume`       | Analogue-session volume divided by its 20-day average.   |
-
-Aggregate summary fields (per response): analogue count, percentage positive
-after one day, percentage positive after five days, median and average
-realized returns for both horizons, the feature list actually used, the
-distance methodology description, the query date, and the candidate pool size.
-
-### Non-goals
-
-- Analogues are **not** forecasts and do **not** change any model probability.
-- Realized analogue outcomes are historical outcomes, not projections.
-- Similar historical conditions do **not** predict identical outcomes.
+Analogues are not forecasts and do not change model probabilities. Past similarity does not imply the same future outcome. If the local history is missing or too short, the endpoint returns `available: false` with a machine-readable reason rather than inventing neighbors.
 
 ## Known limitations
 
-- Small numeric differences between yfinance and Alpha Vantage can appear on
-  the same trading day due to different exchange aggregation.
-- Alpha Vantage occasionally delays end-of-day data by several hours; the UI
-  labels this transparently as "Stale cache".
-- The analogue engine requires the local historical CSV to exist and cover
-  enough prior sessions to satisfy the temporal-separation window and produce
-  complete feature rows; otherwise the endpoint returns a truthful
-  `available: false` payload with a machine-readable `reason`.
+Yfinance and Alpha Vantage can disagree slightly on the same trading day because of exchange aggregation differences. Alpha Vantage end-of-day prints can lag by several hours; the UI surfaces that as stale cache when applicable. Simulated workbook data is fictional by design — useful for demos and tests, never a substitute for live market history. Analogue search needs a sufficiently long local CSV after the separation window and feature warm-up, or it correctly reports unavailable.
