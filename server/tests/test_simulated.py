@@ -34,6 +34,57 @@ def _write_workbook(path: Path, sheets: dict[str, pd.DataFrame]) -> Path:
     return path
 
 
+def _current_forecast_rows(latest_date) -> pd.DataFrame:
+    import json
+
+    def explanations(method_suffix: str) -> str:
+        return json.dumps(
+            {
+                "method": "synthetic_scenario_fixture",
+                "up": [
+                    {
+                        "label": "return_5d",
+                        "feature": "return_5d",
+                        "value": 0.01,
+                        "direction": "up",
+                        "contribution": 0.02,
+                        "plain_english": f"Synthetic {method_suffix} upward factor.",
+                    }
+                ],
+                "down": [],
+                "uncertainty": [],
+            }
+        )
+
+    iso = pd.Timestamp(latest_date).normalize().date().isoformat()
+    return pd.DataFrame(
+        [
+            {
+                "horizon_days": 1,
+                "features_as_of": iso,
+                "prob_up": 0.57,
+                "prob_down": 0.43,
+                "direction": "up",
+                "confidence": "moderate",
+                "fixture_name": "synthetic_scenario_fixture_1d",
+                "generated_at": f"{iso}T20:15:00+00:00",
+                "explanations_json": explanations("1d"),
+            },
+            {
+                "horizon_days": 5,
+                "features_as_of": iso,
+                "prob_up": 0.48,
+                "prob_down": 0.52,
+                "direction": "down",
+                "confidence": "low",
+                "fixture_name": "synthetic_scenario_fixture_5d",
+                "generated_at": f"{iso}T20:15:00+00:00",
+                "explanations_json": explanations("5d"),
+            },
+        ]
+    )
+
+
 def _valid_sheets() -> dict[str, pd.DataFrame]:
     market = pd.DataFrame(
         {
@@ -108,8 +159,14 @@ def _valid_sheets() -> dict[str, pd.DataFrame]:
         "Forecast_History": forecasts,
         "News_Context": news,
         "Scenario_Labels": labels,
+        "Current_Forecast": _current_forecast_rows(market["date"].iloc[-1]),
         "Data_Dictionary": pd.DataFrame(
-            {"Sheet": ["Market_Data"], "Column": ["date"], "Type": ["date"], "Meaning": ["x"]}
+            {
+                "Sheet": ["Market_Data", "Current_Forecast"],
+                "Column": ["date", "fixture_name"],
+                "Type": ["date", "string"],
+                "Meaning": ["x", "synthetic fixture label"],
+            }
         ),
     }
 
@@ -139,9 +196,18 @@ def test_load_repo_simulated_workbook():
         "volume",
     ]
     assert set(workbook.forecast_history["horizon_days"].unique()) == {1, 5}
+    assert workbook.current_forecast_error is None
+    assert workbook.current_forecasts is not None
+    assert {item.horizon_days for item in workbook.current_forecasts} == {1, 5}
+    latest = workbook.market_data["date"].iloc[-1].date().isoformat()
+    for item in workbook.current_forecasts:
+        assert item.features_as_of == latest
+        assert "synthetic" in item.fixture_name
+        assert "actual" not in item.to_horizon_payload()
     summary = workbook.to_summary()
     assert summary["mode"] == "simulated"
     assert "synthetic" in summary["disclaimer"].lower()
+    assert summary["current_forecast_horizons"] == [1, 5]
 
 
 def test_load_minimal_valid_workbook(tmp_path):
@@ -152,6 +218,51 @@ def test_load_minimal_valid_workbook(tmp_path):
     assert len(workbook.market_data) == 5
     assert len(workbook.forecast_history) == 10
     assert workbook.news_context[0].title == "Synthetic headline"
+    assert workbook.current_forecast_error is None
+    assert workbook.current_forecasts is not None
+    assert len(workbook.current_forecasts) == 2
+
+
+def test_missing_current_forecast_soft_fails(tmp_path):
+    sheets = _valid_sheets()
+    del sheets["Current_Forecast"]
+    path = _write_workbook(tmp_path / "no_current.xlsx", sheets)
+    workbook = load_simulated_workbook(path)
+    assert workbook.current_forecasts is None
+    assert workbook.current_forecast_error is not None
+    assert workbook.current_forecast_error.reason == "simulated_current_forecast_missing"
+    # Other sheets still load so market/history can keep serving.
+    assert len(workbook.market_data) == 5
+    assert len(workbook.forecast_history) == 10
+
+
+def test_malformed_current_forecast_soft_fails(tmp_path):
+    sheets = _valid_sheets()
+    sheets["Current_Forecast"].loc[0, "prob_up"] = 1.5
+    path = _write_workbook(tmp_path / "bad_current.xlsx", sheets)
+    workbook = load_simulated_workbook(path)
+    assert workbook.current_forecasts is None
+    assert workbook.current_forecast_error is not None
+    assert workbook.current_forecast_error.reason == "simulated_current_forecast_malformed"
+
+
+def test_current_forecast_rejects_realized_outcome_columns(tmp_path):
+    sheets = _valid_sheets()
+    sheets["Current_Forecast"]["actual"] = [1, 0]
+    path = _write_workbook(tmp_path / "leaky_current.xlsx", sheets)
+    workbook = load_simulated_workbook(path)
+    assert workbook.current_forecast_error is not None
+    assert workbook.current_forecast_error.reason == "simulated_current_forecast_malformed"
+    assert "actual" in workbook.current_forecast_error.message
+
+
+def test_current_forecast_features_as_of_must_match_latest_market(tmp_path):
+    sheets = _valid_sheets()
+    sheets["Current_Forecast"].loc[:, "features_as_of"] = "2020-01-01"
+    path = _write_workbook(tmp_path / "misaligned_current.xlsx", sheets)
+    workbook = load_simulated_workbook(path)
+    assert workbook.current_forecast_error is not None
+    assert workbook.current_forecast_error.reason == "simulated_current_forecast_inconsistent"
 
 
 def test_missing_workbook_raises(tmp_path):

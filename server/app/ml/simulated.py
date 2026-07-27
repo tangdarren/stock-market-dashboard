@@ -8,6 +8,7 @@ to this module.
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -29,7 +30,26 @@ REQUIRED_SHEETS: tuple[str, ...] = (
     "Scenario_Labels",
 )
 
-OPTIONAL_SHEETS: tuple[str, ...] = ("Data_Dictionary",)
+# Current outlook fixture. Validated on load when present; soft-fails so other
+# simulated endpoints can keep serving Market_Data / Forecast_History / news.
+CURRENT_FORECAST_SHEET = "Current_Forecast"
+
+OPTIONAL_SHEETS: tuple[str, ...] = ("Data_Dictionary", CURRENT_FORECAST_SHEET)
+
+CURRENT_FORECAST_REQUIRED_COLUMNS: tuple[str, ...] = (
+    "horizon_days",
+    "features_as_of",
+    "prob_up",
+    "direction",
+    "confidence",
+    "fixture_name",
+    "generated_at",
+    "explanations_json",
+)
+
+CONFIDENCE_LABELS = frozenset({"low", "moderate", "high"})
+DIRECTION_LABELS = frozenset({"up", "down"})
+EXPLANATION_GROUPS = ("up", "down", "uncertainty")
 
 NEWS_REQUIRED_COLUMNS: tuple[str, ...] = (
     "title",
@@ -94,6 +114,35 @@ class SimulatedNewsItem:
 
 
 @dataclass(frozen=True)
+class SimulatedCurrentForecast:
+    """Workbook-backed current outlook for one horizon (no realized outcomes)."""
+
+    horizon_days: int
+    features_as_of: str
+    prob_up: float
+    prob_down: float
+    direction: Literal["up", "down"]
+    confidence: Literal["low", "moderate", "high"]
+    fixture_name: str
+    generated_at: str
+    explanations: dict[str, Any]
+
+    def to_horizon_payload(self) -> dict[str, Any]:
+        """Shape compatible with ForecastService horizon objects."""
+        return {
+            "horizon_days": self.horizon_days,
+            "prob_up": self.prob_up,
+            "prob_down": self.prob_down,
+            "direction": self.direction,
+            "confidence": self.confidence,
+            "model_name": self.fixture_name,
+            "trained_at": self.generated_at,
+            "features_as_of": self.features_as_of,
+            "explanations": self.explanations,
+        }
+
+
+@dataclass(frozen=True)
 class SimulatedWorkbook:
     """Validated synthetic dataset for an explicit simulated-mode session."""
 
@@ -104,6 +153,8 @@ class SimulatedWorkbook:
     scenario_labels: pd.DataFrame
     data_dictionary: pd.DataFrame | None
     source_path: Path
+    current_forecasts: tuple[SimulatedCurrentForecast, ...] | None = None
+    current_forecast_error: SimulatedDataError | None = None
     mode: Literal["simulated"] = "simulated"
 
     def to_summary(self) -> dict[str, Any]:
@@ -115,8 +166,24 @@ class SimulatedWorkbook:
             "forecast_rows": int(len(self.forecast_history)),
             "news_items": len(self.news_context),
             "scenario_label_rows": int(len(self.scenario_labels)),
+            "current_forecast_horizons": (
+                [item.horizon_days for item in self.current_forecasts]
+                if self.current_forecasts
+                else []
+            ),
+            "current_forecast_error": (
+                self.current_forecast_error.reason if self.current_forecast_error else None
+            ),
             "disclaimer": SIMULATED_DATA_DISCLAIMER,
         }
+
+    def current_forecast_by_horizon(self, horizon: int) -> SimulatedCurrentForecast | None:
+        if not self.current_forecasts:
+            return None
+        for item in self.current_forecasts:
+            if item.horizon_days == horizon:
+                return item
+        return None
 
 
 def default_workbook_path() -> Path:
@@ -173,6 +240,24 @@ def load_simulated_workbook(path: Path | str | None = None) -> SimulatedWorkbook
 
     _cross_check_counts(scenario, market, forecasts)
 
+    current_forecasts: tuple[SimulatedCurrentForecast, ...] | None = None
+    current_forecast_error: SimulatedDataError | None = None
+    if CURRENT_FORECAST_SHEET not in excel.sheet_names:
+        current_forecast_error = SimulatedDataError(
+            f"Simulated workbook missing required sheet: {CURRENT_FORECAST_SHEET}",
+            reason="simulated_current_forecast_missing",
+        )
+    else:
+        try:
+            current_forecasts = tuple(
+                _parse_current_forecast_sheet(
+                    pd.read_excel(excel, sheet_name=CURRENT_FORECAST_SHEET),
+                    latest_market_date=market["date"].iloc[-1].date().isoformat(),
+                )
+            )
+        except SimulatedDataError as exc:
+            current_forecast_error = exc
+
     return SimulatedWorkbook(
         scenario=scenario,
         market_data=market,
@@ -181,6 +266,8 @@ def load_simulated_workbook(path: Path | str | None = None) -> SimulatedWorkbook
         scenario_labels=labels,
         data_dictionary=dictionary,
         source_path=workbook_path.resolve(),
+        current_forecasts=current_forecasts,
+        current_forecast_error=current_forecast_error,
     )
 
 
@@ -453,6 +540,249 @@ def _parse_scenario_labels(raw: pd.DataFrame) -> pd.DataFrame:
     return working
 
 
+def _parse_current_forecast_sheet(
+    raw: pd.DataFrame,
+    *,
+    latest_market_date: str,
+) -> list[SimulatedCurrentForecast]:
+    """Parse Current_Forecast rows. Must not include realized future outcomes."""
+    if raw is None or raw.empty:
+        raise SimulatedDataError(
+            "Current_Forecast sheet is empty.",
+            reason="simulated_current_forecast_malformed",
+        )
+
+    working = raw.copy()
+    working.columns = [str(c).strip().lower().replace(" ", "_") for c in working.columns]
+
+    # Reject outcome leakage from Forecast_History-style columns.
+    forbidden = {"actual", "correct", "realized_return", "predicted"}
+    leaked = sorted(forbidden & set(working.columns))
+    if leaked:
+        raise SimulatedDataError(
+            (
+                "Current_Forecast must not include realized-outcome columns "
+                f"{leaked}; those belong on Forecast_History only."
+            ),
+            reason="simulated_current_forecast_malformed",
+        )
+
+    missing = set(CURRENT_FORECAST_REQUIRED_COLUMNS) - set(working.columns)
+    if missing:
+        raise SimulatedDataError(
+            f"Current_Forecast missing required columns: {sorted(missing)}",
+            reason="simulated_current_forecast_malformed",
+        )
+
+    parsed: list[SimulatedCurrentForecast] = []
+    seen_horizons: set[int] = set()
+
+    for idx, row in working.iterrows():
+        try:
+            horizon = int(row["horizon_days"])
+        except (TypeError, ValueError) as exc:
+            raise SimulatedDataError(
+                f"Current_Forecast row {idx} has invalid horizon_days.",
+                reason="simulated_current_forecast_malformed",
+            ) from exc
+        if horizon not in (1, 5):
+            raise SimulatedDataError(
+                f"Current_Forecast row {idx} has unsupported horizon_days={horizon}.",
+                reason="simulated_current_forecast_malformed",
+            )
+        if horizon in seen_horizons:
+            raise SimulatedDataError(
+                f"Current_Forecast has duplicate horizon_days={horizon}.",
+                reason="simulated_current_forecast_malformed",
+            )
+        seen_horizons.add(horizon)
+
+        features_as_of = _format_date(row["features_as_of"])
+        if not features_as_of:
+            raise SimulatedDataError(
+                f"Current_Forecast row {idx} has an invalid features_as_of date.",
+                reason="simulated_current_forecast_malformed",
+            )
+        if features_as_of != latest_market_date:
+            raise SimulatedDataError(
+                (
+                    f"Current_Forecast features_as_of={features_as_of} must match the "
+                    f"latest Market_Data session ({latest_market_date})."
+                ),
+                reason="simulated_current_forecast_inconsistent",
+            )
+
+        try:
+            prob_up = float(row["prob_up"])
+        except (TypeError, ValueError) as exc:
+            raise SimulatedDataError(
+                f"Current_Forecast row {idx} has invalid prob_up.",
+                reason="simulated_current_forecast_malformed",
+            ) from exc
+        if not (0.0 <= prob_up <= 1.0) or pd.isna(prob_up):
+            raise SimulatedDataError(
+                f"Current_Forecast row {idx} prob_up must be in [0, 1].",
+                reason="simulated_current_forecast_malformed",
+            )
+
+        if "prob_down" in working.columns and pd.notna(row.get("prob_down")):
+            try:
+                prob_down = float(row["prob_down"])
+            except (TypeError, ValueError) as exc:
+                raise SimulatedDataError(
+                    f"Current_Forecast row {idx} has invalid prob_down.",
+                    reason="simulated_current_forecast_malformed",
+                ) from exc
+            if abs((prob_up + prob_down) - 1.0) > 1e-6:
+                raise SimulatedDataError(
+                    f"Current_Forecast row {idx} prob_up + prob_down must equal 1.",
+                    reason="simulated_current_forecast_malformed",
+                )
+        else:
+            prob_down = 1.0 - prob_up
+        prob_down = float(round(prob_down, 10))
+
+        direction = str(row["direction"]).strip().lower()
+        if direction not in DIRECTION_LABELS:
+            raise SimulatedDataError(
+                f"Current_Forecast row {idx} has invalid direction={direction!r}.",
+                reason="simulated_current_forecast_malformed",
+            )
+        expected_direction = "up" if prob_up >= 0.5 else "down"
+        if direction != expected_direction:
+            raise SimulatedDataError(
+                (
+                    f"Current_Forecast row {idx} direction={direction!r} conflicts with "
+                    f"prob_up={prob_up} (expected {expected_direction!r})."
+                ),
+                reason="simulated_current_forecast_malformed",
+            )
+
+        confidence = str(row["confidence"]).strip().lower()
+        if confidence not in CONFIDENCE_LABELS:
+            raise SimulatedDataError(
+                f"Current_Forecast row {idx} has invalid confidence={confidence!r}.",
+                reason="simulated_current_forecast_malformed",
+            )
+
+        fixture_name = str(row["fixture_name"]).strip() if pd.notna(row["fixture_name"]) else ""
+        if not fixture_name:
+            raise SimulatedDataError(
+                f"Current_Forecast row {idx} is missing fixture_name.",
+                reason="simulated_current_forecast_malformed",
+            )
+
+        generated_raw = row["generated_at"]
+        generated_ts = pd.to_datetime(generated_raw, errors="coerce", utc=True)
+        if pd.isna(generated_ts):
+            raise SimulatedDataError(
+                f"Current_Forecast row {idx} has an invalid generated_at timestamp.",
+                reason="simulated_current_forecast_malformed",
+            )
+        generated_at = generated_ts.isoformat()
+
+        explanations = _parse_explanations_json(row["explanations_json"], row_index=idx)
+
+        parsed.append(
+            SimulatedCurrentForecast(
+                horizon_days=horizon,
+                features_as_of=features_as_of,
+                prob_up=float(prob_up),
+                prob_down=float(prob_down),
+                direction=direction,  # type: ignore[arg-type]
+                confidence=confidence,  # type: ignore[arg-type]
+                fixture_name=fixture_name,
+                generated_at=generated_at,
+                explanations=explanations,
+            )
+        )
+
+    if seen_horizons != {1, 5}:
+        raise SimulatedDataError(
+            (
+                "Current_Forecast must include exactly one 1-day and one 5-day row "
+                f"(found horizons={sorted(seen_horizons)})."
+            ),
+            reason="simulated_current_forecast_malformed",
+        )
+    return sorted(parsed, key=lambda item: item.horizon_days)
+
+
+def _parse_explanations_json(raw_value: Any, *, row_index: Any) -> dict[str, Any]:
+    if raw_value is None or (isinstance(raw_value, float) and pd.isna(raw_value)):
+        raise SimulatedDataError(
+            f"Current_Forecast row {row_index} is missing explanations_json.",
+            reason="simulated_current_forecast_malformed",
+        )
+    if isinstance(raw_value, dict):
+        payload = raw_value
+    else:
+        text = str(raw_value).strip()
+        if not text:
+            raise SimulatedDataError(
+                f"Current_Forecast row {row_index} has empty explanations_json.",
+                reason="simulated_current_forecast_malformed",
+            )
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise SimulatedDataError(
+                f"Current_Forecast row {row_index} has invalid explanations_json: {exc}",
+                reason="simulated_current_forecast_malformed",
+            ) from exc
+    if not isinstance(payload, dict):
+        raise SimulatedDataError(
+            f"Current_Forecast row {row_index} explanations_json must be an object.",
+            reason="simulated_current_forecast_malformed",
+        )
+
+    method = str(payload.get("method") or "synthetic_scenario_fixture").strip()
+    result: dict[str, Any] = {"method": method}
+    for group in EXPLANATION_GROUPS:
+        factors = payload.get(group, [])
+        if factors is None:
+            factors = []
+        if not isinstance(factors, list):
+            raise SimulatedDataError(
+                (
+                    f"Current_Forecast row {row_index} explanations_json.{group} "
+                    "must be a list."
+                ),
+                reason="simulated_current_forecast_malformed",
+            )
+        normalized: list[dict[str, Any]] = []
+        for factor in factors:
+            if not isinstance(factor, dict):
+                raise SimulatedDataError(
+                    (
+                        f"Current_Forecast row {row_index} explanations_json.{group} "
+                        "contains a non-object factor."
+                    ),
+                    reason="simulated_current_forecast_malformed",
+                )
+            try:
+                normalized.append(
+                    {
+                        "label": str(factor.get("label") or factor.get("feature") or ""),
+                        "feature": str(factor.get("feature") or ""),
+                        "value": float(factor.get("value", 0.0)),
+                        "direction": str(factor.get("direction") or group),
+                        "contribution": float(factor.get("contribution", 0.0)),
+                        "plain_english": str(factor.get("plain_english") or ""),
+                    }
+                )
+            except (TypeError, ValueError) as exc:
+                raise SimulatedDataError(
+                    (
+                        f"Current_Forecast row {row_index} has invalid numeric fields "
+                        f"in explanations_json.{group}: {exc}"
+                    ),
+                    reason="simulated_current_forecast_malformed",
+                ) from exc
+        result[group] = normalized
+    return result
+
+
 def _cross_check_counts(
     scenario: SimulatedScenarioMeta,
     market: pd.DataFrame,
@@ -497,12 +827,15 @@ def _cross_check_counts(
 
 
 __all__ = [
+    "CURRENT_FORECAST_REQUIRED_COLUMNS",
+    "CURRENT_FORECAST_SHEET",
     "NEWS_REQUIRED_COLUMNS",
     "OPTIONAL_SHEETS",
     "REQUIRED_SHEETS",
     "SCENARIO_LABEL_COLUMNS",
     "SIMULATED_DATA_DISCLAIMER",
     "SIMULATED_WORKBOOK_FILENAME",
+    "SimulatedCurrentForecast",
     "SimulatedDataError",
     "SimulatedNewsItem",
     "SimulatedScenarioMeta",

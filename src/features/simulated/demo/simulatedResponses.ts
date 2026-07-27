@@ -63,12 +63,36 @@ export const simulatedMarket: MarketResponse = {
   disclaimer: SIMULATED_DATA_DISCLAIMER,
 }
 
+export const SIMULATED_FORECAST_DISCLAIMER =
+  'These outlooks are synthetic scenario fixtures from the local workbook. They are not outputs from a trained live model and must not be treated as real SPY forecasts.'
+
 export const simulatedForecast: ForecastResponse = {
   ...demoForecast,
   mode: 'simulated',
   source: 'simulated_workbook',
   data_classification: 'SIMULATED / FICTIONAL',
-  disclaimer: SIMULATED_DATA_DISCLAIMER,
+  disclaimer: SIMULATED_FORECAST_DISCLAIMER,
+  model_unavailable: false,
+  one_day: demoForecast.one_day
+    ? {
+        ...demoForecast.one_day,
+        model_name: 'synthetic_scenario_fixture_1d',
+        explanations: {
+          ...demoForecast.one_day.explanations,
+          method: 'synthetic_scenario_fixture',
+        },
+      }
+    : null,
+  five_day: demoForecast.five_day
+    ? {
+        ...demoForecast.five_day,
+        model_name: 'synthetic_scenario_fixture_5d',
+        explanations: {
+          ...demoForecast.five_day.explanations,
+          method: 'synthetic_scenario_fixture',
+        },
+      }
+    : null,
 }
 
 export const simulatedHistory: ForecastHistoryResponse = {

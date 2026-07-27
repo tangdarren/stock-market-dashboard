@@ -31,6 +31,12 @@ DISCLAIMER = (
     "Model output is probabilistic and may be wrong. It is not financial advice."
 )
 
+SIMULATED_FORECAST_DISCLAIMER = (
+    "These outlooks are synthetic scenario fixtures from the local workbook. "
+    "They are not outputs from a trained live model and must not be treated as "
+    "real SPY forecasts."
+)
+
 
 @dataclass(frozen=True)
 class HorizonForecast:
@@ -58,7 +64,76 @@ class ForecastService:
         return True
 
     async def forecast(self, *, simulated: bool = False) -> dict[str, Any]:
-        """Return forecasts for 1d and 5d horizons plus metadata + disclaimer."""
+        """Return forecasts for 1d and 5d horizons plus metadata + disclaimer.
+
+        Simulated mode returns workbook-backed Current_Forecast fixtures and does
+        not require trained model artifacts. Live mode keeps the existing Alpha
+        Vantage + artifact inference path.
+        """
+        if simulated:
+            return await self._forecast_simulated()
+        return await self._forecast_live()
+
+    async def _forecast_simulated(self) -> dict[str, Any]:
+        from app.ml.simulated import (
+            SIMULATED_DATA_DISCLAIMER,
+            SimulatedDataError,
+            get_simulated_workbook,
+        )
+
+        try:
+            workbook = get_simulated_workbook()
+        except SimulatedDataError as exc:
+            return _simulated_forecast_unavailable(exc.reason, str(exc))
+
+        if workbook.current_forecast_error is not None or not workbook.current_forecasts:
+            err = workbook.current_forecast_error
+            reason = (
+                err.reason if err is not None else "simulated_current_forecast_missing"
+            )
+            message = (
+                err.message
+                if err is not None
+                else "Simulated Current_Forecast data is unavailable."
+            )
+            return _simulated_forecast_unavailable(reason, message)
+
+        one_day = workbook.current_forecast_by_horizon(1)
+        five_day = workbook.current_forecast_by_horizon(5)
+        if one_day is None or five_day is None:
+            return _simulated_forecast_unavailable(
+                "simulated_current_forecast_malformed",
+                "Simulated Current_Forecast must include both 1-day and 5-day rows.",
+            )
+
+        features_as_of = one_day.features_as_of
+        latest_market = workbook.market_data["date"].iloc[-1].date().isoformat()
+        if features_as_of != latest_market or five_day.features_as_of != latest_market:
+            return _simulated_forecast_unavailable(
+                "simulated_current_forecast_inconsistent",
+                (
+                    "Simulated Current_Forecast features_as_of must match the latest "
+                    f"Market_Data session ({latest_market})."
+                ),
+            )
+
+        disclaimer = workbook.scenario.warning or SIMULATED_DATA_DISCLAIMER
+        return {
+            "one_day": one_day.to_horizon_payload(),
+            "five_day": five_day.to_horizon_payload(),
+            "features_as_of": features_as_of,
+            "data_as_of": latest_market,
+            "mode": "simulated",
+            "is_stale": False,
+            "disclaimer": SIMULATED_FORECAST_DISCLAIMER,
+            "model_unavailable": False,
+            "source": "simulated_workbook",
+            "data_classification": workbook.scenario.data_classification,
+            "simulated_disclaimer": disclaimer,
+            "scenario_name": workbook.scenario.scenario_name,
+        }
+
+    async def _forecast_live(self) -> dict[str, Any]:
         try:
             models = {horizon: load_model(horizon) for horizon in (1, 5)}
         except ArtifactMissing as exc:
@@ -68,7 +143,7 @@ class ForecastService:
             return _unavailable_response(str(exc))
 
         try:
-            market = await self._market.get_spy_daily(simulated=simulated)
+            market = await self._market.get_spy_daily(simulated=False)
         except Exception as exc:
             logger.warning("Market data unavailable during forecast: %s", exc)
             return _unavailable_response(f"Market data unavailable: {exc}")
@@ -88,7 +163,7 @@ class ForecastService:
         for horizon, loaded in models.items():
             forecasts[f"{horizon}d"] = self._forecast_one(loaded, current, features_as_of)
 
-        payload = {
+        return {
             "one_day": forecasts["1d"],
             "five_day": forecasts["5d"],
             "features_as_of": features_as_of,
@@ -98,15 +173,6 @@ class ForecastService:
             "disclaimer": DISCLAIMER,
             "model_unavailable": False,
         }
-        if simulated or market.get("mode") == "simulated":
-            payload["source"] = market.get("source", "simulated_workbook")
-            payload["data_classification"] = market.get(
-                "data_classification", "SIMULATED / FICTIONAL"
-            )
-            if market.get("disclaimer"):
-                payload["simulated_disclaimer"] = market["disclaimer"]
-        return payload
-
 
     def _forecast_one(
         self,
@@ -182,6 +248,24 @@ def _unavailable_response(reason: str) -> dict[str, Any]:
         "disclaimer": DISCLAIMER,
         "model_unavailable": True,
         "reason": reason,
+    }
+
+
+def _simulated_forecast_unavailable(reason: str, message: str) -> dict[str, Any]:
+    """Workbook-backed forecast failure — never claim trained artifacts are missing."""
+    return {
+        "one_day": None,
+        "five_day": None,
+        "features_as_of": None,
+        "data_as_of": None,
+        "mode": "simulated",
+        "is_stale": False,
+        "disclaimer": SIMULATED_FORECAST_DISCLAIMER,
+        "model_unavailable": False,
+        "reason": reason,
+        "detail": message,
+        "source": "simulated_workbook",
+        "data_classification": "SIMULATED / FICTIONAL",
     }
 
 

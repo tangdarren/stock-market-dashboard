@@ -313,6 +313,43 @@ describe('DailyDashboardPage', () => {
       ).toBeInTheDocument()
     })
 
+    it('renders workbook-backed forecast cards without model-unavailable state', async () => {
+      window.localStorage.setItem('spy-forecast-lab:simulated-data', '1')
+      renderWithProviders(<DailyDashboardPage />)
+
+      expect(await screen.findByText('Simulated data')).toBeInTheDocument()
+      expect(
+        await screen.findByTestId('forecast-interpretation'),
+      ).toBeInTheDocument()
+      expect(screen.getAllByText(/Next trading day/i).length).toBeGreaterThan(0)
+      expect(
+        screen.getAllByText(/Next five trading sessions/i).length,
+      ).toBeGreaterThan(0)
+      expect(
+        screen.queryByRole('heading', { name: /model unavailable/i }),
+      ).not.toBeInTheDocument()
+      expect(screen.getByText(/synthetic scenario fixture/i)).toBeInTheDocument()
+    })
+
+    it('switches back to live labeling when simulated mode is turned off', async () => {
+      window.localStorage.setItem('spy-forecast-lab:simulated-data', '1')
+      const { unmount } = renderWithProviders(<DailyDashboardPage />)
+
+      expect(await screen.findByText('Simulated data')).toBeInTheDocument()
+      expect(
+        await screen.findByRole('status', { name: /simulated workbook data/i }),
+      ).toBeInTheDocument()
+
+      unmount()
+      window.localStorage.setItem('spy-forecast-lab:simulated-data', '0')
+      renderWithProviders(<DailyDashboardPage />)
+
+      expect(await screen.findByText('Live data')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('status', { name: /simulated workbook data/i }),
+      ).not.toBeInTheDocument()
+    })
+
     it('keeps live labeling when simulated mode is off', async () => {
       renderWithProviders(<DailyDashboardPage />)
 
