@@ -21,8 +21,9 @@ const benefits = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
       </svg>
     ),
-    title: 'Real-Time Intelligence',
-    description: 'Live market data refreshed every 30 seconds. Never trade on stale information again.',
+    title: 'SPY Directional Forecasts',
+    description:
+      'Educational next-day and five-session outlooks for SPY — probabilistic direction estimates, not trade signals.',
   },
   {
     icon: (
@@ -30,8 +31,9 @@ const benefits = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
       </svg>
     ),
-    title: 'Advanced Analytics',
-    description: 'Trend analysis, gap detection, and overnight summaries to frame every session with clarity.',
+    title: 'Explainable Forecast Factors',
+    description:
+      'See which technical drivers support each outlook so you can study the reasoning behind the model output.',
   },
   {
     icon: (
@@ -39,8 +41,9 @@ const benefits = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     ),
-    title: 'Pre-Market Context',
-    description: 'Know what happened overnight before the bell rings. Walk in prepared, not reactive.',
+    title: 'Historical Analogues',
+    description:
+      'Compare today with similar past market setups to put the current forecast in historical context.',
   },
   {
     icon: (
@@ -48,31 +51,47 @@ const benefits = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
       </svg>
     ),
-    title: 'Institutional-Grade Security',
-    description: 'Your data and sessions are protected with modern security standards. No compromises.',
+    title: 'Model Reliability & Monitoring',
+    description:
+      'Inspect forecast behavior across horizons and rolling windows so model reliability stays visible over time.',
   },
 ]
 
 const showcaseCards = [
-  { ticker: 'NQ', name: 'E-mini Nasdaq', price: '$18,945.25', change: '+2.67%', up: true },
-  { ticker: 'ES', name: 'E-mini S&P 500', price: '$5,428.50', change: '+1.82%', up: true },
-  { ticker: 'GC', name: 'Gold Futures', price: '$2,341.80', change: '+0.93%', up: true },
-  { ticker: 'MSFT', name: 'Microsoft', price: '$415.50', change: '+1.09%', up: true },
-  { ticker: 'AMZN', name: 'Amazon', price: '$185.92', change: '+3.14%', up: true },
-  { ticker: 'META', name: 'Meta Platforms', price: '$502.30', change: '+2.65%', up: true },
+  { ticker: '1D', name: 'Next-day SPY outlook', detail: 'Directional', note: 'Educational' },
+  { ticker: '5D', name: 'Five-session outlook', detail: 'Directional', note: 'Educational' },
+  { ticker: 'FX', name: 'Forecast factors', detail: 'Explainable', note: 'Drivers' },
+  { ticker: 'HA', name: 'Historical analogues', detail: 'Context', note: 'Comparable' },
+  { ticker: 'MM', name: 'Model Monitor', detail: 'Reliability', note: 'Tracked' },
+  { ticker: 'RL', name: 'Replay Lab', detail: 'Practice', note: 'Historical' },
 ]
 
 const steps = [
-  { num: '01', title: 'Open the Dashboard', description: 'Launch Tempest and get an instant snapshot of the market — pre-market movers, overnight gaps, and trend direction.' },
-  { num: '02', title: 'Analyze with Context', description: 'Use built-in analytics, support/resistance levels, and volume signals to frame your thesis before the bell.' },
-  { num: '03', title: 'Execute with Conviction', description: 'Trade with clarity, not emotion. Every decision backed by structured data and real-time intelligence.' },
+  {
+    num: '01',
+    title: 'Review the SPY Outlook',
+    description:
+      'Open the dashboard to explore next-day and five-session forecasts alongside current market conditions.',
+  },
+  {
+    num: '02',
+    title: 'Inspect Factors & Analogues',
+    description:
+      'Study the explainable drivers behind each forecast and compare similar historical setups for context.',
+  },
+  {
+    num: '03',
+    title: 'Practice & Monitor',
+    description:
+      'Use Market Replay Lab to lock educational predictions on past sessions, and check Model Monitor for reliability over time.',
+  },
 ]
 
 const philosophy = [
-  { label: 'Clarity over noise', description: 'Strip away the chaos. See only what matters.' },
-  { label: 'Preparation is edge', description: 'The best trade starts before the market opens.' },
-  { label: 'Speed with discipline', description: 'Fast enough to capture. Disciplined enough to wait.' },
-  { label: 'Built by traders', description: 'Every feature shaped by real trading experience.' },
+  { label: 'Clarity over noise', description: 'Focus on SPY outlooks, factors, and context — not ticker clutter.' },
+  { label: 'Explain before you trust', description: 'Forecasts are more useful when the supporting drivers are visible.' },
+  { label: 'History as a teacher', description: 'Replay past sessions and compare analogues to learn how setups evolve.' },
+  { label: 'Educational by design', description: 'Probabilistic forecasts for study — not financial advice or trade execution.' },
 ]
 
 export function LandingPage() {
@@ -124,10 +143,10 @@ export function LandingPage() {
                 className="mt-8 text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl"
                 variants={fadeUp} initial="hidden" animate="visible" custom={1}
               >
-                Trade Smarter.
+                Understand the Outlook.
                 <br />
                 <span className="bg-gradient-to-r from-[#00FFB2] to-[#00e6a0] bg-clip-text text-transparent">
-                  Move Faster.
+                  Study the Why.
                 </span>
               </motion.h1>
 
@@ -135,9 +154,9 @@ export function LandingPage() {
                 className="mx-auto mt-6 max-w-lg text-lg leading-relaxed text-slate-400 lg:mx-0"
                 variants={fadeUp} initial="hidden" animate="visible" custom={2}
               >
-                Live market data, overnight context, and clear analytics
-                so you can walk into every trading session with confidence
-                and make better decisions faster.
+                Educational SPY next-day and five-session forecasts with explainable
+                factors, historical analogues, model monitoring, and a Market Replay Lab —
+                plus an optional simulated-data mode for practice.
               </motion.p>
 
               <motion.div
@@ -166,10 +185,10 @@ export function LandingPage() {
               <div className="relative rounded-2xl border border-[#00FFB2]/12 bg-white/[0.03] p-8 shadow-[0_0_30px_rgba(0,255,178,0.08),0_0_60px_rgba(0,255,178,0.04)] backdrop-blur-sm">
                 <div className="flex items-center justify-between pb-5">
                   <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.15em] text-[#00FFB2]/70">Portfolio</p>
-                    <p className="mt-1 text-3xl font-bold text-white">$58,417.32</p>
+                    <p className="text-sm font-semibold uppercase tracking-[0.15em] text-[#00FFB2]/70">SPY Outlook</p>
+                    <p className="mt-1 text-3xl font-bold text-white">1D · 5D</p>
                   </div>
-                  <span className="rounded-lg bg-[#00FFB2]/10 px-4 py-2 text-base font-semibold text-[#00FFB2]">+16.8%</span>
+                  <span className="rounded-lg bg-[#00FFB2]/10 px-4 py-2 text-base font-semibold text-[#00FFB2]">Educational</span>
                 </div>
 
                 <div className="h-px bg-white/[0.06]" />
@@ -187,8 +206,8 @@ export function LandingPage() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-base font-semibold text-white">{s.price}</p>
-                        <p className={`text-sm font-medium ${s.up ? 'text-[#00FFB2]' : 'text-red-400'}`}>{s.change}</p>
+                        <p className="text-base font-semibold text-white">{s.detail}</p>
+                        <p className="text-sm font-medium text-[#00FFB2]">{s.note}</p>
                       </div>
                     </div>
                   ))}
@@ -208,20 +227,18 @@ export function LandingPage() {
           <FadeContent>
             <div className="flex flex-col items-center gap-8 sm:flex-row sm:justify-between">
               <div className="flex items-center gap-2">
-                <div className="flex gap-0.5 text-[#00FFB2]">
-                  {Array.from({ length: 5 }).map((_, i) => <span key={i} className="text-base">★</span>)}
-                </div>
-                <span className="text-sm font-medium text-white">4.9</span>
+                <span className="text-sm font-medium text-white">SPY-focused</span>
               </div>
               <p className="max-w-xl text-center text-sm leading-relaxed text-slate-400">
-                Precision, performance, and clarity — empowering you to navigate the market with confidence and speed.
+                Explainable forecasts, historical context, and model monitoring —
+                built for studying market outlooks, not placing trades.
               </p>
               <div className="flex items-center gap-3">
-                <span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-600">Real-Time</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-600">Educational</span>
                 <span className="h-1 w-1 rounded-full bg-[#00FFB2]" />
-                <span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-600">Secure</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-600">Explainable</span>
                 <span className="h-1 w-1 rounded-full bg-[#00FFB2]" />
-                <span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-600">Free</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.15em] text-slate-600">Replayable</span>
               </div>
             </div>
           </FadeContent>
@@ -235,11 +252,11 @@ export function LandingPage() {
             <div className="text-center">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#00FFB2]/80">Why Tempest?</p>
               <h2 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-                Built for traders who demand more.
+                Built for learners who want clearer market context.
               </h2>
               <p className="mx-auto mt-4 max-w-xl text-base text-slate-400">
-                Every feature designed to give you an edge — from pre-market
-                preparation to intraday execution.
+                Every surface is designed to help you study SPY forecasts —
+                from explainable drivers to historical replay and model monitoring.
               </p>
             </div>
           </FadeContent>
@@ -266,14 +283,14 @@ export function LandingPage() {
           <div className="flex flex-col gap-12 lg:flex-row lg:items-center lg:gap-20">
             <div className="flex-1">
               <FadeContent>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#00FFB2]/80">All Stocks, One Platform</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#00FFB2]/80">One Focus, Full Toolkit</p>
                 <h2 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-                  Track, analyze, and act — all in one place.
+                  Forecast, explain, replay, and monitor — in one place.
                 </h2>
                 <p className="mt-4 max-w-md text-base text-slate-400">
-                  Monitor the entire market from a single dashboard. Real-time
-                  prices, trend signals, and overnight context for every ticker
-                  that matters to you.
+                  Explore SPY outlooks with explainable factors and analogues, practice
+                  in Market Replay Lab, review model reliability, and optionally switch
+                  to clearly labeled simulated workbook data.
                 </p>
                 <Link
                   to={ROUTES.DAILY}
@@ -297,9 +314,9 @@ export function LandingPage() {
                       </div>
                       <p className="text-sm font-semibold text-white">{s.ticker}</p>
                     </div>
-                    <p className="mt-3 text-lg font-bold text-white">{s.price}</p>
-                    <p className={`mt-1 text-xs font-semibold ${s.up ? 'text-[#00FFB2]' : 'text-red-400'}`}>
-                      {s.change}
+                    <p className="mt-3 text-lg font-bold text-white">{s.detail}</p>
+                    <p className="mt-1 text-xs font-semibold text-[#00FFB2]">
+                      {s.note}
                     </p>
                   </div>
                 ))}
@@ -317,7 +334,7 @@ export function LandingPage() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#00FFB2]/80">How It Works</p>
                 <h2 className="mt-4 text-3xl font-bold tracking-tight text-white sm:text-4xl">
-                  Three steps to sharper trading.
+                  Three steps to clearer market study.
                 </h2>
               </div>
               <Link
@@ -355,8 +372,8 @@ export function LandingPage() {
                 Built different. For a reason.
               </h2>
               <p className="mx-auto mt-4 max-w-lg text-base text-slate-400">
-                Tempest isn't another flashy trading app. It's a focused tool
-                built by a trader who got tired of noise.
+                Tempest is a focused educational dashboard for SPY forecasts —
+                designed to make model outputs inspectable, comparable, and replayable.
               </p>
             </div>
           </FadeContent>
@@ -385,11 +402,12 @@ export function LandingPage() {
               </div>
               <div className="relative z-10">
                 <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl lg:text-5xl">
-                  Ready to trade with clarity?
+                  Ready to explore the outlook?
                 </h2>
                 <p className="mx-auto mt-5 max-w-md text-base leading-relaxed text-slate-400">
-                  Join traders who start every session with structured data,
-                  real-time context, and the confidence to act decisively.
+                  Open the dashboard for educational SPY forecasts, explainable factors,
+                  analogues, Replay Lab practice, and model monitoring — with optional
+                  simulated data when you want a labeled practice path.
                 </p>
                 <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
                   <Link
