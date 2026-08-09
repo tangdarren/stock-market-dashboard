@@ -63,7 +63,7 @@ const NAV_ITEMS = [
 ]
 
 export function DailyDashboardPage() {
-  usePageTitle('SPY Forecast Lab')
+  usePageTitle('Market Outlook')
 
   const queryClient = useQueryClient()
   const [isRefreshing, setIsRefreshing] = useState(false)
