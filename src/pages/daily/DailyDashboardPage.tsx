@@ -5,6 +5,7 @@ import { FadeContent } from '@/features/ui/components/FadeContent'
 import { usePageTitle } from '@/hooks/usePageTitle'
 
 import { BacktestSummary } from '@/features/forecast/components/BacktestSummary'
+import { ForecastChangePanel } from '@/features/forecast/components/ForecastChangePanel'
 import { ForecastDecisionHero } from '@/features/forecast/components/ForecastDecisionHero'
 import { ForecastErrorState } from '@/features/forecast/components/ForecastErrorState'
 import { ForecastHistoryTable } from '@/features/forecast/components/ForecastHistoryTable'
@@ -43,6 +44,7 @@ const SECTION_IDS = {
   outlook: 'outlook',
   conditions: 'market-conditions',
   explanation: 'explanation',
+  change: 'forecast-change',
   analogues: 'historical-matches',
   performance: 'performance',
   history: 'forecast-history',
@@ -55,6 +57,7 @@ const NAV_ITEMS = [
   { id: SECTION_IDS.outlook, label: 'Outlook' },
   { id: SECTION_IDS.conditions, label: 'Market conditions' },
   { id: SECTION_IDS.explanation, label: 'Explanation' },
+  { id: SECTION_IDS.change, label: 'Forecast change' },
   { id: SECTION_IDS.analogues, label: 'Historical matches' },
   { id: SECTION_IDS.performance, label: 'Performance' },
   { id: SECTION_IDS.history, label: 'Forecast history' },
@@ -237,6 +240,36 @@ export function DailyDashboardPage() {
                     forecast={fiveDay}
                   />
                 </div>
+              </ForecastSection>
+            </FadeContent>
+
+            {/* ============ Section 3b: Forecast change vs previous ============ */}
+            <FadeContent delay={200}>
+              <ForecastSection
+                id={SECTION_IDS.change}
+                eyebrow="Compared with previous"
+                title="How the forecast changed"
+                description="Previous versus current model probabilities for SPY finishing higher — descriptive only, not a market call."
+              >
+                <ForecastChangePanel
+                  forecast={forecastData}
+                  historyRecords={historyData?.records}
+                  isLoading={
+                    forecast.isLoading ||
+                    (history.isLoading && !historyData?.records?.length)
+                  }
+                  error={
+                    !shouldUseDemoFallback && !historyData
+                      ? history.error
+                      : undefined
+                  }
+                  isDemo={shouldUseDemoFallback || forecastData?.mode === 'demo'}
+                  isSimulated={
+                    showSimulatedNotice || forecastData?.mode === 'simulated'
+                  }
+                  modelUnavailable={modelIsMissing && !shouldUseDemoFallback}
+                  effectiveMode={effectiveMode}
+                />
               </ForecastSection>
             </FadeContent>
 

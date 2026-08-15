@@ -58,6 +58,7 @@ describe('DailyDashboardPage', () => {
     const expectedOrder = [
       /current market conditions/i,
       /why the model leans this way/i,
+      /how the forecast changed/i,
       /similar historical market setups/i,
       /how reliable has the model been/i,
       /historical forecast review/i,
@@ -82,6 +83,8 @@ describe('DailyDashboardPage', () => {
     const nav = await screen.findByRole('navigation', { name: /forecast page sections/i })
     expect(within(nav).getByRole('link', { name: /outlook/i })).toBeInTheDocument()
     expect(within(nav).getByRole('link', { name: /market conditions/i })).toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: /explanation/i })).toBeInTheDocument()
+    expect(within(nav).getByRole('link', { name: /forecast change/i })).toBeInTheDocument()
     expect(within(nav).getByRole('link', { name: /historical matches/i })).toBeInTheDocument()
     expect(within(nav).getByRole('link', { name: /performance/i })).toBeInTheDocument()
     expect(within(nav).getByRole('link', { name: /methodology/i })).toBeInTheDocument()
