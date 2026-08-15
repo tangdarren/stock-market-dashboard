@@ -23,6 +23,9 @@ function buildSeries(): MarketResponse['series'] {
     535.2, 536.1, 534.7, 537.4, 538.9, 540.1, 539.3, 541.5, 543.0, 542.4, 544.8, 546.1, 545.2,
     547.8, 549.1, 548.4, 550.7, 552.3, 551.9, 554.2, 553.1, 555.9, 557.2, 556.4, 558.7, 560.1,
     559.3, 561.2, 562.8, 561.0,
+    // Extend through the demo forecast as-of date (2024-09-16) so prior-vs-current
+    // market context can be derived from the same fixture series.
+    562.4, 563.1, 561.8, 564.2, 565.0, 564.1, 566.3, 567.8, 566.9, 568.4, 569.2, 568.0, 570.1,
   ]
   const start = new Date('2024-08-05')
   return closes.map((close, i) => {

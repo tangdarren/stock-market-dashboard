@@ -2,7 +2,12 @@ import { Badge } from '@/components/common/Badge'
 import { GlassCard } from '@/features/ui/components/GlassCard'
 import { BackendUnavailableError } from '@/lib/api/client'
 import { cn } from '@/lib/utils/cn'
-import type { ForecastResponse, Mode, WalkForwardRecord } from '../api/types'
+import type {
+  ForecastResponse,
+  MarketResponse,
+  Mode,
+  WalkForwardRecord,
+} from '../api/types'
 import {
   compareForecastToPrevious,
   type ConfidenceChange,
@@ -10,11 +15,18 @@ import {
 } from '../utils/compareForecasts'
 import { confidenceCopy } from '../utils/confidence'
 import { formatDate, formatProbability } from '../utils/format'
+import {
+  compareSessionIndicators,
+  indicatorsAtDate,
+  type IndicatorChange,
+} from '../utils/marketIndicators'
 import { SkeletonBlock } from './ForecastSkeleton'
 
 interface ForecastChangePanelProps {
   forecast?: ForecastResponse | null
   historyRecords?: readonly WalkForwardRecord[] | null
+  /** Latest market series used to derive indicator context between sessions. */
+  market?: MarketResponse | null
   isLoading?: boolean
   error?: unknown
   /** When true, label the comparison as demo/sample data. */
@@ -29,13 +41,19 @@ interface ForecastChangePanelProps {
 const PANEL_DISCLAIMER =
   'A change in the model’s bullish probability is not a prediction that the market will move that way. Probabilities remain educational estimates.'
 
+const CONDITIONS_DISCLAIMER =
+  'Indicator shifts describe market context between the two forecast dates. They are correlational background, not proof of what caused the model’s probability change.'
+
 /**
  * Compares the latest 1-day and 5-day SPY forecasts with the most recent prior
- * walk-forward forecasts. Descriptive only — does not imply market direction.
+ * walk-forward forecasts, and surfaces the largest market-condition shifts
+ * between those sessions. Descriptive only — does not imply market direction
+ * or model causation.
  */
 export function ForecastChangePanel({
   forecast,
   historyRecords,
+  market,
   isLoading = false,
   error,
   isDemo = false,
@@ -93,6 +111,22 @@ export function ForecastChangePanel({
   const simulated =
     (isSimulated || effectiveMode === 'simulated' || forecast.mode === 'simulated') && !demo
 
+  const previousDate = pickPreviousSessionDate(comparison.oneDay, comparison.fiveDay)
+  const currentDate =
+    forecast.features_as_of ??
+    forecast.one_day?.features_as_of ??
+    forecast.five_day?.features_as_of ??
+    market?.features_as_of ??
+    null
+
+  const previousIndicators = indicatorsAtDate(market?.series, previousDate)
+  const currentIndicators = indicatorsAtDate(market?.series, currentDate)
+  const conditionChanges = compareSessionIndicators(
+    previousIndicators,
+    currentIndicators,
+    5,
+  )
+
   return (
     <GlassCard className="p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -102,7 +136,8 @@ export function ForecastChangePanel({
           </p>
           <p className="text-sm text-slate-300">
             How the model’s probability of SPY finishing higher moved since the
-            prior scored forecast for each horizon.
+            prior scored forecast for each horizon — with market context between
+            those two sessions.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -125,9 +160,99 @@ export function ForecastChangePanel({
         />
       </div>
 
+      <MarketContextChanges
+        previousDate={previousDate}
+        currentDate={currentIndicators?.asOf ?? currentDate}
+        changes={conditionChanges}
+        hasMarketSeries={Boolean(market?.series?.length)}
+        canCompute={Boolean(previousIndicators && currentIndicators)}
+      />
+
       <p className="mt-4 text-[11px] leading-relaxed text-slate-500">{PANEL_DISCLAIMER}</p>
     </GlassCard>
   )
+}
+
+function MarketContextChanges({
+  previousDate,
+  currentDate,
+  changes,
+  hasMarketSeries,
+  canCompute,
+}: {
+  previousDate: string | null
+  currentDate: string | null
+  changes: IndicatorChange[]
+  hasMarketSeries: boolean
+  canCompute: boolean
+}) {
+  return (
+    <div className="mt-5 rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
+            Market conditions between forecasts
+          </p>
+          {previousDate && currentDate ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Context from{' '}
+              <span className="font-mono text-slate-400">{formatDate(previousDate)}</span>
+              {' → '}
+              <span className="font-mono text-slate-400">{formatDate(currentDate)}</span>
+            </p>
+          ) : null}
+        </div>
+        <Badge variant="info">Context, not causation</Badge>
+      </div>
+
+      {!hasMarketSeries ? (
+        <p className="mt-3 text-sm text-slate-400">
+          Market series data is not available, so indicator shifts between the
+          two forecast sessions cannot be shown.
+        </p>
+      ) : !canCompute ? (
+        <p className="mt-3 text-sm text-slate-400">
+          Not enough overlapping market history was available to compare
+          indicators between these two forecast dates.
+        </p>
+      ) : changes.length === 0 ? (
+        <p className="mt-3 text-sm text-slate-400">
+          No large shifts in RSI, volatility, returns, distance from the 20-day
+          average, or relative volume stood out between these sessions.
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-2" aria-label="Largest market condition changes">
+          {changes.map((change) => (
+            <li
+              key={change.key}
+              className="flex items-start gap-2 text-sm text-slate-200"
+            >
+              <span
+                aria-hidden
+                className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#00FFB2]/70"
+              />
+              <span>{change.sentence}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+        {CONDITIONS_DISCLAIMER}
+      </p>
+    </div>
+  )
+}
+
+function pickPreviousSessionDate(
+  oneDay: HorizonForecastComparison | null,
+  fiveDay: HorizonForecastComparison | null,
+): string | null {
+  const dates = [oneDay?.previousDate, fiveDay?.previousDate].filter(
+    (d): d is string => Boolean(d),
+  )
+  if (dates.length === 0) return null
+  return dates.sort()[dates.length - 1]!
 }
 
 function HorizonChangeCard({

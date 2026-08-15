@@ -254,6 +254,7 @@ export function DailyDashboardPage() {
                 <ForecastChangePanel
                   forecast={forecastData}
                   historyRecords={historyData?.records}
+                  market={marketData}
                   isLoading={
                     forecast.isLoading ||
                     (history.isLoading && !historyData?.records?.length)

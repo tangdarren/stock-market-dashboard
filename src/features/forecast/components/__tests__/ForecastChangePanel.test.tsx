@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { ForecastChangePanel } from '../ForecastChangePanel'
-import { demoForecast, demoHistory } from '../../demo/demoResponses'
+import { demoForecast, demoHistory, demoMarket } from '../../demo/demoResponses'
 import type { ForecastResponse, WalkForwardRecord } from '../../api/types'
 import { BackendUnavailableError } from '@/lib/api/client'
 
@@ -26,6 +26,7 @@ describe('ForecastChangePanel', () => {
       <ForecastChangePanel
         forecast={demoForecast}
         historyRecords={demoHistory.records}
+        market={demoMarket}
         isDemo
       />,
     )
@@ -48,6 +49,41 @@ describe('ForecastChangePanel', () => {
     ).toBeInTheDocument()
   })
 
+  it('surfaces largest market-condition shifts as plain language, not causation', () => {
+    render(
+      <ForecastChangePanel
+        forecast={demoForecast}
+        historyRecords={demoHistory.records}
+        market={demoMarket}
+        isDemo
+      />,
+    )
+
+    expect(screen.getByText(/market conditions between forecasts/i)).toBeInTheDocument()
+    expect(screen.getByText(/context, not causation/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/correlational background, not proof of what caused/i),
+    ).toBeInTheDocument()
+
+    const list = screen.getByRole('list', { name: /largest market condition changes/i })
+    expect(list.querySelectorAll('li').length).toBeGreaterThan(0)
+    // Sentences should describe indicator moves, not claim they drove the model.
+    expect(list.textContent).toMatch(/from .+ to /i)
+    expect(list.textContent).not.toMatch(/caused|because of|due to the model/i)
+  })
+
+  it('explains when market series is missing for condition comparison', () => {
+    render(
+      <ForecastChangePanel
+        forecast={demoForecast}
+        historyRecords={demoHistory.records}
+      />,
+    )
+    expect(
+      screen.getByText(/market series data is not available/i),
+    ).toBeInTheDocument()
+  })
+
   it('renders both horizons when prior history exists for each', () => {
     const history = [
       mkRecord('2024-09-13', 1, 0.4),
@@ -56,7 +92,11 @@ describe('ForecastChangePanel', () => {
       mkRecord('2024-09-16', 5, 0.54),
     ]
     render(
-      <ForecastChangePanel forecast={demoForecast} historyRecords={history} />,
+      <ForecastChangePanel
+        forecast={demoForecast}
+        historyRecords={history}
+        market={demoMarket}
+      />,
     )
 
     expect(screen.getByText('+18.0 pp')).toBeInTheDocument()
@@ -120,6 +160,7 @@ describe('ForecastChangePanel', () => {
       <ForecastChangePanel
         forecast={{ ...demoForecast, mode: 'simulated' }}
         historyRecords={demoHistory.records}
+        market={demoMarket}
         isSimulated
       />,
     )

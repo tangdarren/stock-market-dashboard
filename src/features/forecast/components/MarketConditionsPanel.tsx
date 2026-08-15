@@ -6,6 +6,12 @@ import {
   formatPrice,
   formatVolume,
 } from '../utils/format'
+import {
+  rollingVol,
+  rsi,
+  tailMean,
+  tailReturn,
+} from '../utils/marketIndicators'
 import { PriceHistoryChart } from './PriceHistoryChart'
 
 interface MarketConditionsPanelProps {
@@ -217,48 +223,4 @@ function placeholderMetrics(n: number): Metric[] {
     tone: 'neutral' as const,
     mono: i === 0,
   }))
-}
-
-// ---------- pure math helpers -------------------------------------------------
-
-function tailMean(values: number[], window: number): number | null {
-  if (values.length < window) return null
-  const slice = values.slice(-window)
-  return slice.reduce((sum, v) => sum + v, 0) / window
-}
-
-function rollingVol(closes: number[], window: number): number | null {
-  if (closes.length < window + 1) return null
-  const returns: number[] = []
-  for (let i = closes.length - window; i < closes.length; i++) {
-    returns.push((closes[i] - closes[i - 1]) / closes[i - 1])
-  }
-  const mean = returns.reduce((s, v) => s + v, 0) / returns.length
-  const variance =
-    returns.reduce((s, v) => s + (v - mean) ** 2, 0) / (returns.length - 1)
-  return Math.sqrt(variance)
-}
-
-function tailReturn(closes: number[], window: number): number | null {
-  if (closes.length < window + 1) return null
-  const last = closes[closes.length - 1]
-  const first = closes[closes.length - 1 - window]
-  return (last - first) / first
-}
-
-function rsi(closes: number[], window: number): number | null {
-  if (closes.length < window + 1) return null
-  let gains = 0
-  let losses = 0
-  const start = closes.length - window - 1
-  for (let i = start + 1; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1]
-    if (diff >= 0) gains += diff
-    else losses += -diff
-  }
-  const avgGain = gains / window
-  const avgLoss = losses / window
-  if (avgLoss === 0) return 100
-  const rs = avgGain / avgLoss
-  return 100 - 100 / (1 + rs)
 }
