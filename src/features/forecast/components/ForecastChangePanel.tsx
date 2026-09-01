@@ -20,6 +20,7 @@ import {
   indicatorsAtDate,
   type IndicatorChange,
 } from '../utils/marketIndicators'
+import { ForecastProbabilityTimeline } from './ForecastProbabilityTimeline'
 import { SkeletonBlock } from './ForecastSkeleton'
 
 interface ForecastChangePanelProps {
@@ -159,6 +160,11 @@ export function ForecastChangePanel({
           missingCopy="No earlier 5-day forecast was found in history for comparison."
         />
       </div>
+
+      <ForecastProbabilityTimeline
+        forecast={forecast}
+        historyRecords={historyRecords}
+      />
 
       <MarketContextChanges
         previousDate={previousDate}

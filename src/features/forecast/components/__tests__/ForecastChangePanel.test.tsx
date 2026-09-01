@@ -47,6 +47,13 @@ describe('ForecastChangePanel', () => {
     expect(
       screen.getByText(/not a prediction that the market will move/i),
     ).toBeInTheDocument()
+
+    const timeline = screen.getByTestId('forecast-probability-timeline')
+    const market = screen.getByText(/market conditions between forecasts/i)
+    expect(timeline).toHaveTextContent(/forecast probability history/i)
+    expect(
+      market.compareDocumentPosition(timeline) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).not.toBe(0)
   })
 
   it('surfaces largest market-condition shifts as plain language, not causation', () => {
