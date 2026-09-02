@@ -141,6 +141,9 @@ export function indicatorsAtDate(
   }
 }
 
+export const MARKET_CONTEXT_DISCLAIMER =
+  'Indicator shifts describe market context between the two forecast dates. They are correlational background, not proof of what caused the model’s probability change.'
+
 /**
  * Rank the largest meaningful indicator shifts between two sessions.
  * Descriptive context only — does not claim these changes caused the forecast.

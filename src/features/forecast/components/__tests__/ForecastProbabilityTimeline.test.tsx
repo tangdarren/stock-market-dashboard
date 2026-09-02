@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { ForecastProbabilityTimeline } from '../ForecastProbabilityTimeline'
-import { demoForecast, demoHistory } from '../../demo/demoResponses'
+import { demoForecast, demoHistory, demoMarket } from '../../demo/demoResponses'
 import type { ForecastResponse, WalkForwardRecord } from '../../api/types'
 
 function mkRecord(
@@ -50,6 +51,105 @@ describe('ForecastProbabilityTimeline', () => {
     expect(
       screen.getByText(/larger markers highlight directional flips/i),
     ).toBeInTheDocument()
+    expect(
+      screen.getByRole('radiogroup', { name: /meaningful forecast shifts/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/select a highlighted shift to inspect previous and current/i),
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('forecast-shift-explanation')).not.toBeInTheDocument()
+  })
+
+  it('explains a selected shift with probabilities, dates, and market context', async () => {
+    const user = userEvent.setup()
+    render(
+      <ForecastProbabilityTimeline
+        forecast={demoForecast}
+        historyRecords={demoHistory.records}
+        market={demoMarket}
+      />,
+    )
+
+    await user.click(
+      screen.getByRole('radio', {
+        name: /1-day flipped bullish across 50% \(\+14\.0 pp\)/i,
+      }),
+    )
+
+    const explanation = screen.getByTestId('forecast-shift-explanation')
+    expect(explanation).toHaveTextContent(/selected forecast shift/i)
+    expect(explanation).toHaveTextContent('44.0%')
+    expect(explanation).toHaveTextContent('58.0%')
+    expect(explanation).toHaveTextContent('+14.0 pp')
+    expect(
+      screen.getByRole('radio', {
+        name: /1-day flipped bullish across 50% \(\+14\.0 pp\).*2024-09-13 → 2024-09-16/i,
+      }),
+    ).toHaveAttribute('aria-checked', 'true')
+    expect(within(explanation).getByText(/context, not causation/i)).toBeInTheDocument()
+    expect(explanation).toHaveTextContent(/correlational background, not proof of what caused/i)
+
+    const changes = within(explanation).getByRole('list', {
+      name: /largest market condition changes for selected forecast shift/i,
+    })
+    expect(changes.querySelectorAll('li').length).toBeGreaterThan(0)
+    expect(changes.textContent).toMatch(/from .+ to /i)
+    expect(changes.textContent).not.toMatch(/caused|because of|due to the model/i)
+  })
+
+  it('updates the explanation when a different shift is selected', async () => {
+    const user = userEvent.setup()
+    render(
+      <ForecastProbabilityTimeline
+        forecast={demoForecast}
+        historyRecords={demoHistory.records}
+        market={demoMarket}
+      />,
+    )
+
+    await user.click(
+      screen.getByRole('radio', {
+        name: /1-day flipped bearish across 50% \(-23\.0 pp\)/i,
+      }),
+    )
+
+    const explanation = screen.getByTestId('forecast-shift-explanation')
+    expect(explanation).toHaveTextContent('71.0%')
+    expect(explanation).toHaveTextContent('48.0%')
+    expect(explanation).toHaveTextContent('-23.0 pp')
+    expect(
+      screen.getByRole('radio', {
+        name: /1-day flipped bearish across 50% \(-23\.0 pp\).*2024-09-05 → 2024-09-06/i,
+      }),
+    ).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('explains a selected shift when market series is missing', async () => {
+    const user = userEvent.setup()
+    render(
+      <ForecastProbabilityTimeline
+        forecast={demoForecast}
+        historyRecords={demoHistory.records}
+      />,
+    )
+
+    await user.click(
+      screen.getByRole('radio', {
+        name: /1-day flipped bullish across 50% \(\+14\.0 pp\)/i,
+      }),
+    )
+
+    const explanation = screen.getByTestId('forecast-shift-explanation')
+    expect(explanation).toHaveTextContent('44.0%')
+    expect(explanation).toHaveTextContent('58.0%')
+    expect(explanation).toHaveTextContent(
+      /market series data is not available, so indicator shifts between these two forecast sessions/i,
+    )
+    expect(
+      within(explanation).queryByRole('list', {
+        name: /largest market condition changes for selected forecast shift/i,
+      }),
+    ).not.toBeInTheDocument()
   })
 
   it('does not highlight ordinary small probability wiggles', () => {
@@ -78,6 +178,9 @@ describe('ForecastProbabilityTimeline', () => {
     )
     expect(
       screen.queryByText(/larger markers highlight directional flips/i),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('radiogroup', { name: /meaningful forecast shifts/i }),
     ).not.toBeInTheDocument()
   })
 

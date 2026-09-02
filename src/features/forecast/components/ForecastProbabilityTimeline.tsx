@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   CartesianGrid,
   Line,
@@ -10,7 +10,9 @@ import {
   YAxis,
 } from 'recharts'
 
-import type { ForecastResponse, WalkForwardRecord } from '../api/types'
+import { cn } from '@/lib/utils/cn'
+import type { ForecastResponse, MarketResponse, WalkForwardRecord } from '../api/types'
+import { explainForecastShift } from '../utils/explainForecastShift'
 import { formatDate, formatProbability } from '../utils/format'
 import {
   buildForecastProbabilityTimeline,
@@ -28,6 +30,7 @@ import {
   type ForecastShift,
   type ForecastShiftHorizon,
 } from '../utils/forecastShifts'
+import { ForecastShiftExplanation } from './ForecastShiftExplanation'
 
 const ONE_DAY_COLOR = '#00FFB2'
 const FIVE_DAY_COLOR = '#7DD3FC'
@@ -39,6 +42,8 @@ const DECREASE_COLOR = '#F87171'
 interface ForecastProbabilityTimelineProps {
   forecast?: ForecastResponse | null
   historyRecords?: readonly WalkForwardRecord[] | null
+  /** Market series used to explain indicator context around a selected shift. */
+  market?: MarketResponse | null
 }
 
 interface TooltipProps {
@@ -88,6 +93,7 @@ function ProbabilityTooltip({ active, payload, shiftsByKey }: TooltipProps) {
 export function ForecastProbabilityTimeline({
   forecast,
   historyRecords,
+  market,
 }: ForecastProbabilityTimelineProps) {
   const data = useMemo(
     () => buildForecastProbabilityTimeline(forecast, historyRecords),
@@ -96,6 +102,19 @@ export function ForecastProbabilityTimeline({
 
   const shifts = useMemo(() => detectForecastShifts(data.points), [data.points])
   const shiftsByKey = useMemo(() => indexForecastShifts(shifts), [shifts])
+  const selectableShifts = useMemo(
+    () =>
+      shifts
+        .slice()
+        .sort((a, b) => b.date.localeCompare(a.date) || a.horizon.localeCompare(b.horizon)),
+    [shifts],
+  )
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const selectedShift = selectedKey ? (shiftsByKey.get(selectedKey) ?? null) : null
+  const selectedExplanation = useMemo(
+    () => (selectedShift ? explainForecastShift(selectedShift, market?.series) : null),
+    [market?.series, selectedShift],
+  )
 
   const yDomain = useMemo(() => {
     const values = data.points.flatMap((point) =>
@@ -118,7 +137,7 @@ export function ForecastProbabilityTimeline({
     const shiftSummary =
       shifts.length === 0
         ? 'No meaningful shifts in this window.'
-        : `${shifts.length} meaningful ${shifts.length === 1 ? 'shift' : 'shifts'}: ${shifts.map(describeForecastShift).join('; ')}.`
+        : `${shifts.length} meaningful ${shifts.length === 1 ? 'shift' : 'shifts'}: ${shifts.map(describeForecastShift).join('; ')}. Select a highlighted shift to inspect probabilities and market context.`
     return `Recent forecast probability history across ${data.points.length} sessions, ending ${formatDate(last.date)}. Latest 1-day bullish probability ${oneDay}; latest 5-day bullish probability ${fiveDay}. ${shiftSummary}`
   }, [data, shifts])
 
@@ -165,7 +184,21 @@ export function ForecastProbabilityTimeline({
           </ul>
           <div className="mt-3 h-56 w-full sm:h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data.points} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+              <LineChart
+                data={data.points}
+                margin={{ top: 8, right: 12, left: 0, bottom: 0 }}
+                onClick={(state) => {
+                  const date =
+                    typeof state?.activeLabel === 'string' ? state.activeLabel : null
+                  if (!date) return
+                  const match =
+                    shiftsByKey.get(forecastShiftKey('oneDay', date)) ??
+                    shiftsByKey.get(forecastShiftKey('fiveDay', date))
+                  if (match) {
+                    setSelectedKey(forecastShiftKey(match.horizon, match.date))
+                  }
+                }}
+              >
                 <CartesianGrid
                   stroke="rgba(255,255,255,0.06)"
                   strokeDasharray="3 6"
@@ -207,8 +240,8 @@ export function ForecastProbabilityTimeline({
                     name="1-day P(up)"
                     stroke={ONE_DAY_COLOR}
                     strokeWidth={2}
-                    dot={renderHorizonDot(shiftsByKey, 'oneDay', ONE_DAY_COLOR)}
-                    activeDot={renderHorizonDot(shiftsByKey, 'oneDay', ONE_DAY_COLOR, true)}
+                    dot={renderHorizonDot(shiftsByKey, 'oneDay', ONE_DAY_COLOR, false, selectedKey)}
+                    activeDot={renderHorizonDot(shiftsByKey, 'oneDay', ONE_DAY_COLOR, true, selectedKey)}
                     connectNulls={false}
                     isAnimationActive={false}
                   />
@@ -220,8 +253,8 @@ export function ForecastProbabilityTimeline({
                     name="5-day P(up)"
                     stroke={FIVE_DAY_COLOR}
                     strokeWidth={2}
-                    dot={renderHorizonDot(shiftsByKey, 'fiveDay', FIVE_DAY_COLOR)}
-                    activeDot={renderHorizonDot(shiftsByKey, 'fiveDay', FIVE_DAY_COLOR, true)}
+                    dot={renderHorizonDot(shiftsByKey, 'fiveDay', FIVE_DAY_COLOR, false, selectedKey)}
+                    activeDot={renderHorizonDot(shiftsByKey, 'fiveDay', FIVE_DAY_COLOR, true, selectedKey)}
                     connectNulls={false}
                     isAnimationActive={false}
                   />
@@ -233,7 +266,52 @@ export function ForecastProbabilityTimeline({
             <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
               Larger markers highlight directional flips across 50% or moves of
               at least {SIGNIFICANT_FORECAST_SHIFT_PP} percentage points. Ordinary
-              day-to-day wiggles stay unmarked.
+              day-to-day wiggles stay unmarked. Select a highlighted shift to
+              inspect the probabilities and market context between those dates.
+            </p>
+          ) : null}
+
+          {selectableShifts.length > 0 ? (
+            <div
+              role="radiogroup"
+              aria-label="Meaningful forecast shifts"
+              className="mt-3 max-h-40 space-y-1.5 overflow-y-auto pr-1"
+            >
+              {selectableShifts.map((shift) => {
+                const key = forecastShiftKey(shift.horizon, shift.date)
+                const selected = key === selectedKey
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setSelectedKey(key)}
+                    className={cn(
+                      'w-full rounded-lg border px-3 py-2 text-left text-xs transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60',
+                      selected
+                        ? 'border-[#00FFB2]/40 bg-[#00FFB2]/10 text-[#00FFB2]'
+                        : 'border-white/[0.08] bg-white/[0.02] text-slate-300 hover:bg-white/[0.06]',
+                    )}
+                  >
+                    <span className="block font-medium">{describeForecastShift(shift)}</span>
+                    <span className="mt-0.5 block font-mono text-[11px] text-slate-500">
+                      {shift.previousDate} → {shift.date}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
+
+          {selectedExplanation ? (
+            <ForecastShiftExplanation explanation={selectedExplanation} />
+          ) : selectableShifts.length > 0 ? (
+            <p className="mt-3 text-sm text-slate-400">
+              Select a highlighted shift to inspect previous and current
+              probabilities, the percentage-point change, and the largest market
+              indicator changes between those sessions.
             </p>
           ) : null}
         </>
@@ -247,6 +325,7 @@ function renderHorizonDot(
   horizon: ForecastShiftHorizon,
   seriesColor: string,
   active = false,
+  selectedKey: string | null = null,
 ) {
   return function HorizonDot({
     cx,
@@ -259,9 +338,8 @@ function renderHorizonDot(
     payload?: ForecastProbabilityPoint
     value?: number | null
   }) {
-    const shift = payload
-      ? shiftsByKey.get(forecastShiftKey(horizon, payload.date))
-      : undefined
+    const key = payload ? forecastShiftKey(horizon, payload.date) : null
+    const shift = key ? shiftsByKey.get(key) : undefined
     return (
       <ShiftAwareDot
         cx={cx}
@@ -270,6 +348,7 @@ function renderHorizonDot(
         shift={shift}
         seriesColor={seriesColor}
         active={active}
+        selected={Boolean(key && key === selectedKey)}
       />
     )
   }
@@ -282,6 +361,7 @@ function ShiftAwareDot({
   shift,
   seriesColor,
   active = false,
+  selected = false,
 }: {
   cx?: number
   cy?: number
@@ -289,6 +369,7 @@ function ShiftAwareDot({
   shift?: ForecastShift
   seriesColor: string
   active?: boolean
+  selected?: boolean
 }) {
   if (cx == null || cy == null || value == null || !Number.isFinite(value)) {
     return null
@@ -300,11 +381,21 @@ function ShiftAwareDot({
   }
 
   const color = colorForShift(shift)
-  const halo = active ? 9 : 8
-  const core = active ? 5.5 : 5
+  const halo = selected || active ? 10 : 8
+  const core = selected || active ? 6 : 5
 
   return (
     <g>
+      {selected ? (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={halo + 2}
+          fill="none"
+          stroke="#00FFB2"
+          strokeWidth={1.2}
+        />
+      ) : null}
       <circle cx={cx} cy={cy} r={halo} fill={color} fillOpacity={0.2} />
       {isDirectionalFlip(shift.kinds) ? (
         <rect

@@ -137,7 +137,7 @@ export function isDirectionalFlip(kinds: readonly ForecastShiftKind[]): boolean 
 
 export function describeForecastShift(shift: ForecastShift): string {
   const horizon = shift.horizon === 'oneDay' ? '1-day' : '5-day'
-  const pp = formatPp(shift.changePp)
+  const pp = formatShiftChangePp(shift.changePp)
   switch (primaryForecastShiftKind(shift.kinds)) {
     case 'flip_to_bullish':
       return `${horizon} flipped bullish across 50% (${pp})`
@@ -152,7 +152,7 @@ export function describeForecastShift(shift: ForecastShift): string {
   }
 }
 
-function formatPp(pp: number): string {
+export function formatShiftChangePp(pp: number): string {
   if (!Number.isFinite(pp)) return '—'
   const sign = pp > 0 ? '+' : ''
   return `${sign}${pp.toFixed(1)} pp`

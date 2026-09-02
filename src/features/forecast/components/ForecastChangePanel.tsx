@@ -16,6 +16,7 @@ import {
 import { confidenceCopy } from '../utils/confidence'
 import { formatDate, formatProbability } from '../utils/format'
 import {
+  MARKET_CONTEXT_DISCLAIMER,
   compareSessionIndicators,
   indicatorsAtDate,
   type IndicatorChange,
@@ -41,9 +42,6 @@ interface ForecastChangePanelProps {
 
 const PANEL_DISCLAIMER =
   'A change in the model’s bullish probability is not a prediction that the market will move that way. Probabilities remain educational estimates.'
-
-const CONDITIONS_DISCLAIMER =
-  'Indicator shifts describe market context between the two forecast dates. They are correlational background, not proof of what caused the model’s probability change.'
 
 /**
  * Compares the latest 1-day and 5-day SPY forecasts with the most recent prior
@@ -164,6 +162,7 @@ export function ForecastChangePanel({
       <ForecastProbabilityTimeline
         forecast={forecast}
         historyRecords={historyRecords}
+        market={market}
       />
 
       <MarketContextChanges
@@ -244,7 +243,7 @@ function MarketContextChanges({
       )}
 
       <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
-        {CONDITIONS_DISCLAIMER}
+        {MARKET_CONTEXT_DISCLAIMER}
       </p>
     </div>
   )
