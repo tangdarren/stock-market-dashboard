@@ -35,7 +35,7 @@ export function summarizeForecastEvolution(
 ): ForecastEvolutionSummary {
   const recentCount = options?.recentCount ?? EVOLUTION_RECENT_COUNT
   const sorted = points.slice().sort((a, b) => a.date.localeCompare(b.date))
-  const primary = pickPrimarySeries(sorted)
+  const primary = pickPrimaryHorizonSeries(sorted)
   if (!primary) {
     return {
       kind: 'insufficient',
@@ -56,21 +56,23 @@ export function summarizeForecastEvolution(
   }
 }
 
-function pickPrimarySeries(
+export function pickPrimaryHorizonSeries(
   points: readonly ForecastProbabilityPoint[],
 ): { horizon: ForecastShiftHorizon; values: number[] } | null {
-  const oneDay = valuesFor(points, 'oneDay')
+  const oneDay = horizonValues(points, 'oneDay')
   if (oneDay.length >= 2) return { horizon: 'oneDay', values: oneDay }
-  const fiveDay = valuesFor(points, 'fiveDay')
+  const fiveDay = horizonValues(points, 'fiveDay')
   if (fiveDay.length >= 2) return { horizon: 'fiveDay', values: fiveDay }
   return null
 }
 
-function valuesFor(
+export function horizonValues(
   points: readonly ForecastProbabilityPoint[],
   horizon: ForecastShiftHorizon,
 ): number[] {
   return points
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date))
     .map((point) => point[horizon])
     .filter((value): value is number => value != null && Number.isFinite(value))
 }

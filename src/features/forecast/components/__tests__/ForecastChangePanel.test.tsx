@@ -106,8 +106,8 @@ describe('ForecastChangePanel', () => {
       />,
     )
 
-    expect(screen.getByText('+18.0 pp')).toBeInTheDocument()
-    expect(screen.getByText('-7.0 pp')).toBeInTheDocument()
+    expect(screen.getAllByText('+18.0 pp').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('-7.0 pp').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Confidence decreased').length).toBeGreaterThan(0)
   })
 

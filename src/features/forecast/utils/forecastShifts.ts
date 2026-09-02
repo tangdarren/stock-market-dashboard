@@ -25,6 +25,15 @@ export interface ForecastShift {
   changePp: number
 }
 
+export interface ConsecutiveForecastPair {
+  date: string
+  previousDate: string
+  horizon: ForecastShiftHorizon
+  previousProbUp: number
+  currentProbUp: number
+  changePp: number
+}
+
 export interface ClassifyForecastShiftOptions {
   /** Override the significant-move threshold (fraction in [0, 1]). */
   significantChange?: number
@@ -65,18 +74,16 @@ export function classifyForecastShift(
 }
 
 /**
- * Find meaningful consecutive-forecast events on a date-aligned probability
- * timeline. Each horizon is compared only to its own previous non-null value,
- * so sparse 5-day history is not compared against empty dates.
+ * Consecutive non-null readings for each horizon, in date order.
+ * Sparse 5-day history skips empty dates instead of comparing across them.
  */
-export function detectForecastShifts(
+export function listConsecutiveForecastPairs(
   points: readonly ForecastProbabilityPoint[],
-  options?: ClassifyForecastShiftOptions,
-): ForecastShift[] {
+): ConsecutiveForecastPair[] {
   if (points.length < 2) return []
 
   const sorted = points.slice().sort((a, b) => a.date.localeCompare(b.date))
-  const shifts: ForecastShift[] = []
+  const pairs: ConsecutiveForecastPair[] = []
 
   for (const horizon of ['oneDay', 'fiveDay'] as const) {
     let previous: ForecastProbabilityPoint | null = null
@@ -86,21 +93,38 @@ export function detectForecastShifts(
 
       const previousProb = previous?.[horizon]
       if (previous && previousProb != null) {
-        const kinds = classifyForecastShift(previousProb, currentProb, options)
-        if (kinds.length > 0) {
-          shifts.push({
-            date: point.date,
-            previousDate: previous.date,
-            horizon,
-            kinds,
-            previousProbUp: previousProb,
-            currentProbUp: currentProb,
-            changePp: (currentProb - previousProb) * 100,
-          })
-        }
+        pairs.push({
+          date: point.date,
+          previousDate: previous.date,
+          horizon,
+          previousProbUp: previousProb,
+          currentProbUp: currentProb,
+          changePp: (currentProb - previousProb) * 100,
+        })
       }
 
       previous = point
+    }
+  }
+
+  return pairs
+}
+
+/**
+ * Find meaningful consecutive-forecast events on a date-aligned probability
+ * timeline. Each horizon is compared only to its own previous non-null value,
+ * so sparse 5-day history is not compared against empty dates.
+ */
+export function detectForecastShifts(
+  points: readonly ForecastProbabilityPoint[],
+  options?: ClassifyForecastShiftOptions,
+): ForecastShift[] {
+  const shifts: ForecastShift[] = []
+
+  for (const pair of listConsecutiveForecastPairs(points)) {
+    const kinds = classifyForecastShift(pair.previousProbUp, pair.currentProbUp, options)
+    if (kinds.length > 0) {
+      shifts.push({ ...pair, kinds })
     }
   }
 

@@ -54,6 +54,12 @@ describe('ForecastProbabilityTimeline', () => {
     expect(evolution).toHaveTextContent(/forecast evolution/i)
     expect(evolution).toHaveTextContent(/recent directional reversal/i)
     expect(evolution).toHaveTextContent(/not a prediction that the market will reverse/i)
+    const insights = screen.getByTestId('forecast-evolution-insights')
+    expect(insights).toHaveTextContent(/1 session bullish/i)
+    expect(insights).toHaveTextContent('44.0%–71.0%')
+    expect(insights).toHaveTextContent('-23.0 pp')
+    expect(insights).toHaveTextContent('6 flips')
+    expect(insights).toHaveTextContent(/not a trading record/i)
     expect(
       evolution.compareDocumentPosition(
         screen.getByRole('list', { name: /forecast probability history legend/i }),

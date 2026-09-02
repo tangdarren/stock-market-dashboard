@@ -34,7 +34,9 @@ import {
   FORECAST_OUTCOME_DISCLAIMER,
   outcomeForHorizon,
 } from '../utils/forecastOutcomes'
+import { computeForecastEvolutionInsights } from '../utils/forecastEvolutionInsights'
 import { summarizeForecastEvolution } from '../utils/summarizeForecastEvolution'
+import { ForecastEvolutionInsights } from './ForecastEvolutionInsights'
 import { ForecastOutcomeDetails } from './ForecastOutcomeDetails'
 import { ForecastShiftExplanation } from './ForecastShiftExplanation'
 
@@ -149,6 +151,10 @@ export function ForecastProbabilityTimeline({
     () => summarizeForecastEvolution(data.points),
     [data.points],
   )
+  const insights = useMemo(
+    () => computeForecastEvolutionInsights(data.points),
+    [data.points],
+  )
 
   const yDomain = useMemo(() => {
     const values = data.points.flatMap((point) =>
@@ -210,6 +216,7 @@ export function ForecastProbabilityTimeline({
             </p>
             <p className="mt-1 text-sm font-medium text-slate-100">{evolution.headline}</p>
             <p className="mt-1 text-xs leading-relaxed text-slate-500">{evolution.detail}</p>
+            {insights ? <ForecastEvolutionInsights insights={insights} /> : null}
           </div>
           <ul
             className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-400"
