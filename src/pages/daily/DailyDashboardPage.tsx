@@ -121,6 +121,7 @@ export function DailyDashboardPage() {
         queryClient.invalidateQueries({ queryKey: ['forecast-market'] }),
         queryClient.invalidateQueries({ queryKey: ['forecast-spy'] }),
         queryClient.invalidateQueries({ queryKey: ['forecast-history'] }),
+        queryClient.invalidateQueries({ queryKey: ['forecast-metrics'] }),
         queryClient.invalidateQueries({ queryKey: ['forecast-news'] }),
         queryClient.invalidateQueries({ queryKey: ['forecast-analogues'] }),
       ])

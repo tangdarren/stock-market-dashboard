@@ -11,6 +11,7 @@ import {
   successHandlers,
 } from '@/test/msw/handlers'
 import { ENV } from '@/lib/api/env'
+import { demoMetrics } from '@/features/forecast/demo/demoResponses'
 
 const ANALOGUES_URL = `${ENV.API_BASE_URL}${ENV.API_PREFIX}/market/spy/analogues`
 
@@ -154,6 +155,27 @@ describe('DailyDashboardPage', () => {
         name: /historical forecasts \(1-day\)/i,
       }),
     ).toBeInTheDocument()
+  })
+
+  it('invalidates model metrics when the user presses Refresh', async () => {
+    const user = userEvent.setup()
+    let metricsRequests = 0
+    server.use(
+      http.get(`${ENV.API_BASE_URL}${ENV.API_PREFIX}/model/metrics`, () => {
+        metricsRequests += 1
+        return HttpResponse.json(demoMetrics)
+      }),
+    )
+
+    renderWithProviders(<DailyDashboardPage />)
+
+    await screen.findByRole('heading', { name: /what the model currently predicts/i })
+    await waitFor(() => expect(metricsRequests).toBeGreaterThanOrEqual(1))
+    const initialCount = metricsRequests
+
+    await user.click(screen.getByRole('button', { name: /refresh forecast data/i }))
+
+    await waitFor(() => expect(metricsRequests).toBeGreaterThan(initialCount))
   })
 
   it('shows the backend-unavailable card without silently switching to demo data', async () => {
