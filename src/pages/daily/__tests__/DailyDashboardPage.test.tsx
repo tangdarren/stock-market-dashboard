@@ -87,6 +87,12 @@ describe('DailyDashboardPage', () => {
     expect(within(nav).getByRole('link', { name: /forecast change/i })).toBeInTheDocument()
     expect(within(nav).getByRole('link', { name: /historical matches/i })).toBeInTheDocument()
     expect(within(nav).getByRole('link', { name: /performance/i })).toBeInTheDocument()
+    const newsLink = within(nav).getByRole('link', { name: /^news$/i })
+    expect(newsLink).toHaveAttribute('href', '#news')
+    const newsSection = (
+      await screen.findByRole('heading', { name: /current news context/i })
+    ).closest('section')
+    expect(newsSection).toHaveAttribute('id', 'news')
     expect(within(nav).getByRole('link', { name: /methodology/i })).toBeInTheDocument()
   })
 

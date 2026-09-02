@@ -62,6 +62,7 @@ const NAV_ITEMS = [
   { id: SECTION_IDS.performance, label: 'Performance' },
   { id: SECTION_IDS.history, label: 'Forecast history' },
   { id: SECTION_IDS.backtest, label: 'Backtest' },
+  { id: SECTION_IDS.news, label: 'News' },
   { id: SECTION_IDS.methodology, label: 'Methodology' },
 ]
 
