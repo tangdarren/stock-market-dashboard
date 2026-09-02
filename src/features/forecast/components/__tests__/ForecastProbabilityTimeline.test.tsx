@@ -48,6 +48,16 @@ describe('ForecastProbabilityTimeline', () => {
     expect(summary.textContent).toMatch(/54\.0%/)
     expect(summary.textContent).toMatch(/meaningful shifts/i)
     expect(summary.textContent).toMatch(/flipped bullish across 50%/i)
+
+    const evolution = screen.getByTestId('forecast-evolution-summary')
+    expect(evolution).toHaveTextContent(/forecast evolution/i)
+    expect(evolution).toHaveTextContent(/recent directional reversal/i)
+    expect(evolution).toHaveTextContent(/not a prediction that the market will reverse/i)
+    expect(
+      evolution.compareDocumentPosition(
+        screen.getByRole('list', { name: /forecast probability history legend/i }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0)
     expect(
       screen.getByText(/larger markers highlight directional flips/i),
     ).toBeInTheDocument()
@@ -182,6 +192,9 @@ describe('ForecastProbabilityTimeline', () => {
     expect(
       screen.queryByRole('radiogroup', { name: /meaningful forecast shifts/i }),
     ).not.toBeInTheDocument()
+    expect(screen.getByTestId('forecast-evolution-summary')).toHaveTextContent(
+      /no lasting lean in recent forecasts/i,
+    )
   })
 
   it('explains when history is missing or too short to chart', () => {

@@ -30,6 +30,7 @@ import {
   type ForecastShift,
   type ForecastShiftHorizon,
 } from '../utils/forecastShifts'
+import { summarizeForecastEvolution } from '../utils/summarizeForecastEvolution'
 import { ForecastShiftExplanation } from './ForecastShiftExplanation'
 
 const ONE_DAY_COLOR = '#00FFB2'
@@ -116,6 +117,11 @@ export function ForecastProbabilityTimeline({
     [market?.series, selectedShift],
   )
 
+  const evolution = useMemo(
+    () => summarizeForecastEvolution(data.points),
+    [data.points],
+  )
+
   const yDomain = useMemo(() => {
     const values = data.points.flatMap((point) =>
       [point.oneDay, point.fiveDay].filter((value): value is number => value != null),
@@ -138,8 +144,8 @@ export function ForecastProbabilityTimeline({
       shifts.length === 0
         ? 'No meaningful shifts in this window.'
         : `${shifts.length} meaningful ${shifts.length === 1 ? 'shift' : 'shifts'}: ${shifts.map(describeForecastShift).join('; ')}. Select a highlighted shift to inspect probabilities and market context.`
-    return `Recent forecast probability history across ${data.points.length} sessions, ending ${formatDate(last.date)}. Latest 1-day bullish probability ${oneDay}; latest 5-day bullish probability ${fiveDay}. ${shiftSummary}`
-  }, [data, shifts])
+    return `Recent forecast probability history across ${data.points.length} sessions, ending ${formatDate(last.date)}. Latest 1-day bullish probability ${oneDay}; latest 5-day bullish probability ${fiveDay}. Forecast evolution: ${evolution.headline}. ${evolution.detail} ${shiftSummary}`
+  }, [data, evolution, shifts])
 
   return (
     <div
@@ -167,6 +173,16 @@ export function ForecastProbabilityTimeline({
         </p>
       ) : (
         <>
+          <div
+            className="mt-4 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3"
+            data-testid="forecast-evolution-summary"
+          >
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-[#00FFB2]/80">
+              Forecast evolution
+            </p>
+            <p className="mt-1 text-sm font-medium text-slate-100">{evolution.headline}</p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">{evolution.detail}</p>
+          </div>
           <ul
             className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-400"
             aria-label="Forecast probability history legend"
