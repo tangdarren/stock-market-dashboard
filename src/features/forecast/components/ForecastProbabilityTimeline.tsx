@@ -30,7 +30,12 @@ import {
   type ForecastShift,
   type ForecastShiftHorizon,
 } from '../utils/forecastShifts'
+import {
+  FORECAST_OUTCOME_DISCLAIMER,
+  outcomeForHorizon,
+} from '../utils/forecastOutcomes'
 import { summarizeForecastEvolution } from '../utils/summarizeForecastEvolution'
+import { ForecastOutcomeDetails } from './ForecastOutcomeDetails'
 import { ForecastShiftExplanation } from './ForecastShiftExplanation'
 
 const ONE_DAY_COLOR = '#00FFB2'
@@ -71,6 +76,9 @@ function ProbabilityTooltip({ active, payload, shiftsByKey }: TooltipProps) {
           {row.oneDay == null ? '—' : formatProbability(row.oneDay)}
         </span>
       </p>
+      {row.oneDay != null ? (
+        <ForecastOutcomeDetails outcome={row.oneDayOutcome} compact />
+      ) : null}
       {oneDayShift ? (
         <p className="mt-0.5 text-[11px] text-amber-200">
           {describeForecastShift(oneDayShift)}
@@ -82,11 +90,17 @@ function ProbabilityTooltip({ active, payload, shiftsByKey }: TooltipProps) {
           {row.fiveDay == null ? '—' : formatProbability(row.fiveDay)}
         </span>
       </p>
+      {row.fiveDay != null ? (
+        <ForecastOutcomeDetails outcome={row.fiveDayOutcome} compact />
+      ) : null}
       {fiveDayShift ? (
         <p className="mt-0.5 text-[11px] text-amber-200">
           {describeForecastShift(fiveDayShift)}
         </p>
       ) : null}
+      <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
+        {FORECAST_OUTCOME_DISCLAIMER}
+      </p>
     </div>
   )
 }
@@ -115,6 +129,20 @@ export function ForecastProbabilityTimeline({
   const selectedExplanation = useMemo(
     () => (selectedShift ? explainForecastShift(selectedShift, market?.series) : null),
     [market?.series, selectedShift],
+  )
+  const selectedOutcomes = useMemo(() => {
+    if (!selectedShift) {
+      return { previous: null, current: null }
+    }
+    const previousPoint = data.points.find((point) => point.date === selectedShift.previousDate)
+    const currentPoint = data.points.find((point) => point.date === selectedShift.date)
+    return {
+      previous: outcomeForHorizon(previousPoint, selectedShift.horizon),
+      current: outcomeForHorizon(currentPoint, selectedShift.horizon),
+    }
+  }, [data.points, selectedShift])
+  const hasCurrentForecastPoint = data.points.some(
+    (point) => point.oneDayOutcome?.isCurrent || point.fiveDayOutcome?.isCurrent,
   )
 
   const evolution = useMemo(
@@ -196,6 +224,9 @@ export function ForecastProbabilityTimeline({
             <LegendItem color={REFERENCE_COLOR} label="50% reference" dashed />
             {shifts.length > 0 ? (
               <LegendItem color={FLIP_COLOR} label="Meaningful shift" halo />
+            ) : null}
+            {hasCurrentForecastPoint ? (
+              <LegendItem color={ONE_DAY_COLOR} label="Current forecast (unscored)" hollow />
             ) : null}
           </ul>
           <div className="mt-3 h-56 w-full sm:h-64">
@@ -283,7 +314,8 @@ export function ForecastProbabilityTimeline({
               Larger markers highlight directional flips across 50% or moves of
               at least {SIGNIFICANT_FORECAST_SHIFT_PP} percentage points. Ordinary
               day-to-day wiggles stay unmarked. Select a highlighted shift to
-              inspect the probabilities and market context between those dates.
+              inspect the probabilities, scored outcomes, and market context
+              between those dates.
             </p>
           ) : null}
 
@@ -321,13 +353,18 @@ export function ForecastProbabilityTimeline({
             </div>
           ) : null}
 
-          {selectedExplanation ? (
-            <ForecastShiftExplanation explanation={selectedExplanation} />
+          {selectedExplanation && selectedShift ? (
+            <ForecastShiftExplanation
+              explanation={selectedExplanation}
+              previousOutcome={selectedOutcomes.previous}
+              currentOutcome={selectedOutcomes.current}
+            />
           ) : selectableShifts.length > 0 ? (
             <p className="mt-3 text-sm text-slate-400">
               Select a highlighted shift to inspect previous and current
-              probabilities, the percentage-point change, and the largest market
-              indicator changes between those sessions.
+              probabilities, scored outcomes when available, the
+              percentage-point change, and the largest market indicator changes
+              between those sessions.
             </p>
           ) : null}
         </>
@@ -356,6 +393,7 @@ function renderHorizonDot(
   }) {
     const key = payload ? forecastShiftKey(horizon, payload.date) : null
     const shift = key ? shiftsByKey.get(key) : undefined
+    const outcome = outcomeForHorizon(payload, horizon)
     return (
       <ShiftAwareDot
         cx={cx}
@@ -365,6 +403,7 @@ function renderHorizonDot(
         seriesColor={seriesColor}
         active={active}
         selected={Boolean(key && key === selectedKey)}
+        currentForecast={Boolean(outcome?.isCurrent)}
       />
     )
   }
@@ -378,6 +417,7 @@ function ShiftAwareDot({
   seriesColor,
   active = false,
   selected = false,
+  currentForecast = false,
 }: {
   cx?: number
   cy?: number
@@ -386,6 +426,7 @@ function ShiftAwareDot({
   seriesColor: string
   active?: boolean
   selected?: boolean
+  currentForecast?: boolean
 }) {
   if (cx == null || cy == null || value == null || !Number.isFinite(value)) {
     return null
@@ -393,7 +434,16 @@ function ShiftAwareDot({
 
   if (!shift) {
     const radius = active ? 4.5 : 3
-    return <circle cx={cx} cy={cy} r={radius} fill={seriesColor} stroke={seriesColor} />
+    return (
+      <circle
+        cx={cx}
+        cy={cy}
+        r={radius}
+        fill={currentForecast ? 'rgba(13,12,20,0.9)' : seriesColor}
+        stroke={seriesColor}
+        strokeWidth={currentForecast ? 1.6 : 1}
+      />
+    )
   }
 
   const color = colorForShift(shift)
@@ -457,11 +507,13 @@ function LegendItem({
   label,
   dashed = false,
   halo = false,
+  hollow = false,
 }: {
   color: string
   label: string
   dashed?: boolean
   halo?: boolean
+  hollow?: boolean
 }) {
   return (
     <li className="inline-flex items-center gap-2">
@@ -473,6 +525,12 @@ function LegendItem({
           />
           <span className="relative h-1.5 w-1.5 rotate-45" style={{ background: color }} />
         </span>
+      ) : hollow ? (
+        <span
+          aria-hidden
+          className="h-2.5 w-2.5 shrink-0 rounded-full"
+          style={{ border: `1.5px solid ${color}`, background: 'transparent' }}
+        />
       ) : (
         <span
           aria-hidden

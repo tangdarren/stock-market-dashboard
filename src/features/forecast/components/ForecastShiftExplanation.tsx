@@ -3,13 +3,22 @@ import { cn } from '@/lib/utils/cn'
 import { formatDate, formatProbability } from '../utils/format'
 import { MARKET_CONTEXT_DISCLAIMER } from '../utils/marketIndicators'
 import type { ForecastShiftExplanation as ForecastShiftExplanationData } from '../utils/explainForecastShift'
+import type { ForecastHorizonOutcome } from '../utils/forecastOutcomes'
+import { FORECAST_OUTCOME_DISCLAIMER } from '../utils/forecastOutcomes'
 import { describeForecastShift, formatShiftChangePp } from '../utils/forecastShifts'
+import { ForecastOutcomeDetails } from './ForecastOutcomeDetails'
 
 interface ForecastShiftExplanationProps {
   explanation: ForecastShiftExplanationData
+  previousOutcome?: ForecastHorizonOutcome | null
+  currentOutcome?: ForecastHorizonOutcome | null
 }
 
-export function ForecastShiftExplanation({ explanation }: ForecastShiftExplanationProps) {
+export function ForecastShiftExplanation({
+  explanation,
+  previousOutcome = null,
+  currentOutcome = null,
+}: ForecastShiftExplanationProps) {
   const { shift, changes, hasMarketSeries, canCompute, previousDate, currentDate } =
     explanation
   const changeTone =
@@ -61,6 +70,27 @@ export function ForecastShiftExplanation({ explanation }: ForecastShiftExplanati
           }
         />
       </dl>
+
+      {previousOutcome || currentOutcome ? (
+        <div className="mt-4 border-t border-white/[0.06] pt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
+            Scored outcomes
+          </p>
+          <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <ForecastOutcomeDetails
+              label="Previous forecast"
+              outcome={previousOutcome}
+            />
+            <ForecastOutcomeDetails
+              label="Later forecast"
+              outcome={currentOutcome}
+            />
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+            {FORECAST_OUTCOME_DISCLAIMER}
+          </p>
+        </div>
+      ) : null}
 
       <div className="mt-4 border-t border-white/[0.06] pt-3">
         <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">

@@ -126,9 +126,14 @@ describe('buildForecastProbabilityTimeline', () => {
       [],
     )
 
-    expect(points).toEqual([
-      { date: '2024-09-16', oneDay: 0.58, fiveDay: 0.54 },
-    ])
+    expect(points).toHaveLength(1)
+    expect(points[0]).toMatchObject({
+      date: '2024-09-16',
+      oneDay: 0.58,
+      fiveDay: 0.54,
+      oneDayOutcome: { isCurrent: true, status: 'unavailable' },
+      fiveDayOutcome: { isCurrent: true, status: 'unavailable' },
+    })
     expect(hasOneDay).toBe(true)
     expect(hasFiveDay).toBe(true)
     expect(hasEnoughTimelinePoints({ points, hasOneDay, hasFiveDay })).toBe(false)

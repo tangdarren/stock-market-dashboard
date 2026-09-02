@@ -41,6 +41,7 @@ describe('ForecastProbabilityTimeline', () => {
     expect(legend).toHaveTextContent(/5-day P\(up\)/i)
     expect(legend).toHaveTextContent(/50% reference/i)
     expect(legend).toHaveTextContent(/meaningful shift/i)
+    expect(legend).toHaveTextContent(/current forecast \(unscored\)/i)
 
     const summary = screen.getByRole('note')
     expect(summary.textContent).toMatch(/recent forecast probability history/i)
@@ -105,6 +106,35 @@ describe('ForecastProbabilityTimeline', () => {
     expect(changes.querySelectorAll('li').length).toBeGreaterThan(0)
     expect(changes.textContent).toMatch(/from .+ to /i)
     expect(changes.textContent).not.toMatch(/caused|because of|due to the model/i)
+
+    expect(explanation).toHaveTextContent(/direction correct/i)
+    expect(explanation).toHaveTextContent('-0.27%')
+    expect(explanation).toHaveTextContent(/current forecast — outcome not available yet/i)
+    expect(explanation).toHaveTextContent(/not proof of investment performance/i)
+  })
+
+  it('shows a scored incorrect outcome on an earlier selected shift', async () => {
+    const user = userEvent.setup()
+    render(
+      <ForecastProbabilityTimeline
+        forecast={demoForecast}
+        historyRecords={demoHistory.records}
+        market={demoMarket}
+      />,
+    )
+
+    await user.click(
+      screen.getByRole('radio', {
+        name: /1-day rose significantly \(\+16\.0 pp\)/i,
+      }),
+    )
+
+    const explanation = screen.getByTestId('forecast-shift-explanation')
+    expect(explanation).toHaveTextContent(/direction incorrect/i)
+    expect(explanation).toHaveTextContent('-0.15%')
+    expect(explanation).toHaveTextContent(/direction correct/i)
+    expect(explanation).toHaveTextContent('+0.67%')
+    expect(explanation).not.toHaveTextContent(/current forecast — outcome not available yet/i)
   })
 
   it('updates the explanation when a different shift is selected', async () => {

@@ -1,4 +1,9 @@
 import type { ForecastResponse, HorizonForecast, WalkForwardRecord } from '../api/types'
+import {
+  currentForecastOutcome,
+  deriveForecastOutcome,
+  type ForecastHorizonOutcome,
+} from './forecastOutcomes'
 
 /** Most recent unique session dates to plot. */
 export const RECENT_TIMELINE_POINTS = 20
@@ -11,6 +16,8 @@ export interface ForecastProbabilityPoint {
   /** Bullish probability in [0, 1], or null when that horizon has no row on this date. */
   oneDay: number | null
   fiveDay: number | null
+  oneDayOutcome?: ForecastHorizonOutcome | null
+  fiveDayOutcome?: ForecastHorizonOutcome | null
 }
 
 export interface ForecastProbabilityTimelineData {
@@ -38,7 +45,7 @@ export function buildForecastProbabilityTimeline(
     .sort((a, b) => a.date.localeCompare(b.date))
 
   for (const row of history) {
-    upsertPoint(byDate, row.date, row.horizon_days, row.prob_up)
+    upsertPoint(byDate, row.date, row.horizon_days, row.prob_up, deriveForecastOutcome(row))
   }
 
   overlayCurrentHorizon(byDate, forecast, forecast?.one_day ?? null, 1)
@@ -71,7 +78,7 @@ function overlayCurrentHorizon(
   const date =
     horizon.features_as_of || forecast?.features_as_of || forecast?.data_as_of || null
   if (!date) return
-  upsertPoint(byDate, date, horizonDays, horizon.prob_up)
+  upsertPoint(byDate, date, horizonDays, horizon.prob_up, currentForecastOutcome())
 }
 
 function upsertPoint(
@@ -79,11 +86,24 @@ function upsertPoint(
   date: string,
   horizonDays: number,
   probUp: number,
+  outcome: ForecastHorizonOutcome | null,
 ): void {
-  const existing = byDate.get(date) ?? { date, oneDay: null, fiveDay: null }
+  const existing = byDate.get(date) ?? {
+    date,
+    oneDay: null,
+    fiveDay: null,
+    oneDayOutcome: null,
+    fiveDayOutcome: null,
+  }
   const value = clamp01(probUp)
-  if (horizonDays === 1) existing.oneDay = value
-  if (horizonDays === 5) existing.fiveDay = value
+  if (horizonDays === 1) {
+    existing.oneDay = value
+    existing.oneDayOutcome = outcome
+  }
+  if (horizonDays === 5) {
+    existing.fiveDay = value
+    existing.fiveDayOutcome = outcome
+  }
   byDate.set(date, existing)
 }
 
