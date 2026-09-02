@@ -169,7 +169,7 @@ export function DailyDashboardPage() {
               message={
                 (market.error instanceof Error && market.error.message) ||
                 (forecast.error instanceof Error && forecast.error.message) ||
-                'The Forecast Lab API is not reachable right now.'
+                'The Tempest API is not reachable right now.'
               }
               reason="backend_unavailable"
               onRetry={handleRefresh}

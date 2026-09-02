@@ -1,4 +1,4 @@
-# SPY Forecast Lab — Backend
+# Tempest — Backend
 
 FastAPI service that fronts Alpha Vantage with a persistent SQLite cache and rate
 limiter, and serves probability forecasts from scikit-learn models trained by

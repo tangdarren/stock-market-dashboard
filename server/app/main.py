@@ -26,7 +26,7 @@ def create_app() -> FastAPI:
     announce_startup_configuration(settings)
 
     app = FastAPI(
-        title="SPY Forecast Lab API",
+        title="Tempest API",
         version="0.1.0",
         docs_url="/docs" if not settings.is_production else None,
         redoc_url=None,

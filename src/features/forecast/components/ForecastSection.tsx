@@ -18,7 +18,7 @@ interface ForecastSectionProps {
 }
 
 /**
- * Reusable section wrapper for the Forecast Lab page.
+ * Reusable section wrapper for the Tempest forecast page.
  *
  * Establishes a consistent typographic hierarchy — small eyebrow, section
  * heading, one-line supporting sentence — while leaving the children to

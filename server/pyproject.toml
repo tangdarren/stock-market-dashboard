@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "spy-forecast-lab-server"
 version = "0.1.0"
-description = "FastAPI backend for the SPY Forecast Lab: cached Alpha Vantage access + scikit-learn direction models."
+description = "FastAPI backend for Tempest: cached Alpha Vantage access + scikit-learn direction models."
 requires-python = ">=3.10"
 authors = [{ name = "Darren Tang" }]
 license = { text = "MIT" }

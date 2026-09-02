@@ -45,7 +45,7 @@ const timeline = [
     index: '04',
     period: '2026 — Ongoing',
     title: 'Building Market Intelligence',
-    subtitle: 'SPY Forecast Lab',
+    subtitle: 'Tempest',
     description:
       'Created a full-stack market intelligence platform that transforms live and historical SPY data into structured analysis, overnight context, historical analogues, and decision-support tools.',
   },

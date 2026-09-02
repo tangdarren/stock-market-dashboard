@@ -33,7 +33,7 @@ const PANEL_DISCLAIMER =
  * SPY sessions to the latest completed session, alongside their subsequent
  * realized returns, so a reader can see what kind of environment the model is
  * currently operating in. Truthful about all failure modes: a broken analogue
- * endpoint must not take down the rest of the Forecast Lab page.
+ * endpoint must not take down the rest of the Tempest forecast page.
  */
 export function HistoricalAnaloguesPanel({
   data,

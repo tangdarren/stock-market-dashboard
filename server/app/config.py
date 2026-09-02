@@ -55,7 +55,7 @@ def get_settings() -> Settings:
 
 def announce_startup_configuration(settings: Settings) -> None:
     """Log a sanitized view of the configuration. Never emit the key itself."""
-    logger.info("SPY Forecast Lab backend starting (env=%s)", settings.app_env)
+    logger.info("Tempest backend starting (env=%s)", settings.app_env)
     logger.info("Alpha Vantage key present: %s", "yes" if settings.has_api_key else "no")
     logger.info(
         "Alpha Vantage daily budget: %d call(s); min interval: %ds",
