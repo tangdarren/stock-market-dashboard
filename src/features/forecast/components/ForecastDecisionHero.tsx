@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Badge } from '@/components/common/Badge'
 import { GlassCard } from '@/features/ui/components/GlassCard'
 import { cn } from '@/lib/utils/cn'
@@ -7,6 +8,7 @@ import type {
   MarketResponse,
   Mode,
 } from '../api/types'
+import { buildForecastOutlookSummary } from '../utils/forecastOutlookSummary'
 import {
   formatDate,
   formatDateTime,
@@ -60,6 +62,14 @@ export function ForecastDecisionHero({
   const modelIsMissing = forecast?.model_unavailable === true
 
   const interpretation = buildInterpretationSentence(oneDayOutlook, fiveDayOutlook)
+  const outlookSummary = modelIsMissing
+    ? null
+    : buildForecastOutlookSummary({
+        oneDay: oneDayOutlook,
+        fiveDay: fiveDayOutlook,
+        sessionDate: featuresAsOf ?? dataAsOf,
+        effectiveMode,
+      })
 
   return (
     <GlassCard className="p-6 sm:p-8">
@@ -77,28 +87,31 @@ export function ForecastDecisionHero({
           </h1>
         </div>
 
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={!onRefresh || isRefreshing || demoBackendUnavailable}
-          className="inline-flex shrink-0 items-center gap-2 self-start rounded-lg border border-white/[0.1] bg-white/[0.03] px-3 py-2 text-sm text-slate-200 transition-colors hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60"
-          aria-label="Refresh forecast data"
-        >
-          <svg
-            aria-hidden
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={cn('h-4 w-4', isRefreshing && 'animate-spin')}
+        <div className="flex shrink-0 flex-wrap items-center gap-2 self-start">
+          {outlookSummary ? <CopyOutlookButton text={outlookSummary} /> : null}
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={!onRefresh || isRefreshing || demoBackendUnavailable}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.03] px-3 py-2 text-sm text-slate-200 transition-colors hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60"
+            aria-label="Refresh forecast data"
           >
-            <path d="M21 12a9 9 0 1 1-3-6.7" />
-            <path d="M21 4v5h-5" />
-          </svg>
-          {isRefreshing ? 'Refreshing…' : 'Refresh'}
-        </button>
+            <svg
+              aria-hidden
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={cn('h-4 w-4', isRefreshing && 'animate-spin')}
+            >
+              <path d="M21 12a9 9 0 1 1-3-6.7" />
+              <path d="M21 4v5h-5" />
+            </svg>
+            {isRefreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       <div className="mt-5">
@@ -297,6 +310,88 @@ function HorizonBlock({ shortLabel, label, outlook, forecast }: HorizonBlockProp
         label={`${label} — probability up vs down`}
       />
     </article>
+  )
+}
+
+function CopyOutlookButton({ text }: { text: string }) {
+  const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
+
+  useEffect(() => {
+    if (status === 'idle') return
+    const id = window.setTimeout(() => setStatus('idle'), 2000)
+    return () => window.clearTimeout(id)
+  }, [status])
+
+  async function copyOutlook() {
+    try {
+      if (typeof navigator.clipboard?.writeText !== 'function') {
+        setStatus('failed')
+        return
+      }
+      await navigator.clipboard.writeText(text)
+      setStatus('copied')
+    } catch {
+      setStatus('failed')
+    }
+  }
+
+  const label =
+    status === 'copied' ? 'Copied' : status === 'failed' ? 'Copy failed' : 'Copy outlook'
+  const ariaLabel =
+    status === 'copied'
+      ? 'Outlook copied to clipboard'
+      : status === 'failed'
+        ? 'Could not copy outlook'
+        : 'Copy outlook'
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void copyOutlook()
+      }}
+      aria-label={ariaLabel}
+      aria-live="polite"
+      className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.03] px-3 py-2 text-sm text-slate-200 transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60"
+    >
+      {status === 'copied' ? <CheckIcon /> : <ClipboardIcon />}
+      {label}
+    </button>
+  )
+}
+
+function ClipboardIcon() {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4"
+    >
+      <rect x="9" y="9" width="13" height="13" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  )
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
   )
 }
 

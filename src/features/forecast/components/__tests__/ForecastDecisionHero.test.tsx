@@ -27,6 +27,13 @@ function horizonWithProb(base: HorizonForecast, probUp: number): HorizonForecast
   }
 }
 
+function mockClipboard(writeText: ReturnType<typeof vi.fn>) {
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText },
+  })
+}
+
 describe('ForecastDecisionHero', () => {
   it('keeps outlook context and treats the interpretation as the primary summary', () => {
     renderHero()
@@ -122,6 +129,9 @@ describe('ForecastDecisionHero', () => {
     })
     expect(screen.getByRole('status')).toHaveTextContent(/loading the latest forecast/i)
     expect(screen.queryByTestId('forecast-interpretation')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /copy outlook/i }),
+    ).not.toBeInTheDocument()
   })
 
   it('shows a truthful model-unavailable state', () => {
@@ -183,5 +193,76 @@ describe('ForecastDecisionHero', () => {
     expect(within(oneDay).getByRole('img', { name: /direction: down/i })).toBeInTheDocument()
     expect(document.body.textContent ?? '').not.toMatch(/\bBUY\b/)
     expect(document.body.textContent ?? '').not.toMatch(/\bSELL\b/)
+  })
+
+  it('copies the currently displayed outlook and shows Copied', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    mockClipboard(writeText)
+
+    renderHero()
+
+    const button = screen.getByRole('button', { name: 'Copy outlook' })
+    expect(button).toBeEnabled()
+    await user.click(button)
+
+    expect(writeText).toHaveBeenCalledTimes(1)
+    const copied = String(writeText.mock.calls[0]?.[0] ?? '')
+    expect(copied).toContain('SPY Market Outlook')
+    expect(copied).toContain('1-day outlook: Model leans upward')
+    expect(copied).toContain('1-day probability up: 58.0%')
+    expect(copied).toContain('5-day outlook: No strong directional edge')
+    expect(copied).toContain('5-day probability up: 54.0%')
+    expect(copied).toContain('Educational analysis only — not financial advice.')
+
+    expect(
+      await screen.findByRole('button', { name: /outlook copied to clipboard/i }),
+    ).toHaveTextContent('Copied')
+  })
+
+  it('still offers copy outlook when only one horizon is available', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    mockClipboard(writeText)
+
+    const oneHorizon: ForecastResponse = {
+      ...demoForecast,
+      five_day: null,
+    }
+    renderHero({ forecast: oneHorizon })
+
+    await user.click(screen.getByRole('button', { name: 'Copy outlook' }))
+    const copied = String(writeText.mock.calls[0]?.[0] ?? '')
+    expect(copied).toContain('1-day outlook: Model leans upward')
+    expect(copied).toContain('5-day outlook: Unavailable')
+    expect(copied).toContain('5-day probability up: Unavailable')
+  })
+
+  it('hides copy outlook when no useful forecast exists', () => {
+    const unavailable: ForecastResponse = {
+      ...demoForecast,
+      one_day: null,
+      five_day: null,
+      model_unavailable: true,
+      reason: 'No trained model artifacts',
+    }
+    renderHero({ forecast: unavailable, modelUnavailableReason: unavailable.reason })
+    expect(
+      screen.queryByRole('button', { name: /copy outlook/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('handles clipboard failure without crashing', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    mockClipboard(writeText)
+
+    renderHero()
+    await user.click(screen.getByRole('button', { name: 'Copy outlook' }))
+
+    expect(
+      await screen.findByRole('button', { name: /could not copy outlook/i }),
+    ).toHaveTextContent('Copy failed')
+    expect(screen.getByTestId('forecast-interpretation')).toBeInTheDocument()
   })
 })
