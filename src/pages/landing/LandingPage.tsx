@@ -3,16 +3,7 @@ import { FadeContent } from '@/features/ui/components/FadeContent'
 import Grainient from '@/features/ui/components/Grainient'
 import { Link } from 'react-router-dom'
 import { ROUTES } from '@/lib/constants/routes'
-import { motion } from 'framer-motion'
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 24 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.7, delay: 0.15 + i * 0.1, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] },
-  }),
-}
+import { motion, useReducedMotion } from 'framer-motion'
 
 const benefits = [
   {
@@ -96,6 +87,22 @@ const philosophy = [
 
 export function LandingPage() {
   usePageTitle()
+  const reduceMotion = useReducedMotion()
+  const fadeUp = {
+    hidden: reduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 24 },
+    visible: (i: number) =>
+      reduceMotion
+        ? { opacity: 1, y: 0, transition: { duration: 0 } }
+        : {
+            opacity: 1,
+            y: 0,
+            transition: {
+              duration: 0.7,
+              delay: 0.15 + i * 0.1,
+              ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number],
+            },
+          },
+  }
 
   return (
     <div>
@@ -177,45 +184,12 @@ export function LandingPage() {
               </motion.div>
             </div>
 
-            {/* Hero product mockup */}
+            {/* Hero product preview */}
             <motion.div
-              className="w-full max-w-lg flex-shrink-0 lg:max-w-xl lg:translate-x-8 lg:translate-y-[50px]"
+              className="w-full max-w-xl flex-shrink-0 lg:max-w-none lg:w-[56%] lg:translate-x-4 lg:translate-y-[50px]"
               variants={fadeUp} initial="hidden" animate="visible" custom={2}
             >
-              <div className="relative rounded-2xl border border-[#00FFB2]/12 bg-white/[0.03] p-8 shadow-[0_0_30px_rgba(0,255,178,0.08),0_0_60px_rgba(0,255,178,0.04)] backdrop-blur-sm">
-                <div className="flex items-center justify-between pb-5">
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.15em] text-[#00FFB2]/70">SPY Outlook</p>
-                    <p className="mt-1 text-3xl font-bold text-white">1D · 5D</p>
-                  </div>
-                  <span className="rounded-lg bg-[#00FFB2]/10 px-4 py-2 text-base font-semibold text-[#00FFB2]">Educational</span>
-                </div>
-
-                <div className="h-px bg-white/[0.06]" />
-
-                <div className="mt-5 space-y-3.5">
-                  {showcaseCards.slice(0, 3).map((s) => (
-                    <div key={s.ticker} className="flex items-center justify-between rounded-xl border border-[#202026] bg-white/[0.02] px-5 py-4 transition-colors hover:bg-white/[0.04]">
-                      <div className="flex items-center gap-4">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-white/[0.06] text-sm font-bold text-white">
-                          {s.ticker.slice(0, 2)}
-                        </div>
-                        <div>
-                          <p className="text-base font-semibold text-white">{s.ticker}</p>
-                          <p className="text-sm text-slate-500">{s.name}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-base font-semibold text-white">{s.detail}</p>
-                        <p className="text-sm font-medium text-[#00FFB2]">{s.note}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="absolute -right-3 -top-3 h-20 w-20 rounded-full bg-[#00FFB2]/10 blur-2xl" />
-                <div className="absolute -bottom-2 -left-2 h-16 w-16 rounded-full bg-purple-500/[0.06] blur-2xl" />
-              </div>
+              <HeroProductPreview />
             </motion.div>
           </div>
         </div>
@@ -429,5 +403,34 @@ export function LandingPage() {
         </div>
       </section>
     </div>
+  )
+}
+
+function HeroProductPreview() {
+  return (
+    <figure className="mx-auto w-full">
+      <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d0c14] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+        <div className="flex items-center gap-3 border-b border-white/[0.06] bg-white/[0.03] px-3 py-2.5">
+          <div className="flex items-center gap-1.5" aria-hidden="true">
+            <span className="h-2.5 w-2.5 rounded-full bg-white/20" />
+            <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+            <span className="h-2.5 w-2.5 rounded-full bg-white/10" />
+          </div>
+          <p className="min-w-0 flex-1 truncate rounded-md bg-black/35 px-3 py-1 text-center text-[11px] text-slate-500">
+            /market
+          </p>
+        </div>
+        <img
+          src="/previews/tempest-market-outlook.jpg"
+          alt="Tempest Market Outlook dashboard with 1-day and 5-day SPY forecasts"
+          width={1024}
+          height={580}
+          className="h-auto w-full"
+        />
+      </div>
+      <figcaption className="mt-3 text-center text-[11px] font-medium uppercase tracking-[0.2em] text-slate-500">
+        Market Outlook dashboard
+      </figcaption>
+    </figure>
   )
 }
