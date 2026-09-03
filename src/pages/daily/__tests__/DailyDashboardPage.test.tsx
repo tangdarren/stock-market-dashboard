@@ -31,9 +31,13 @@ describe('DailyDashboardPage', () => {
       await screen.findByRole('heading', { name: /what the model currently predicts/i }),
     ).toBeInTheDocument()
 
-    // Both horizons are visible near the top.
-    expect(screen.getByText(/Next trading day/i)).toBeInTheDocument()
-    expect(screen.getByText(/Next five trading sessions/i)).toBeInTheDocument()
+    // Both horizons are visible near the top once the forecast has loaded.
+    expect(
+      await screen.findByRole('article', { name: /next trading day/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('article', { name: /next five trading sessions/i }),
+    ).toBeInTheDocument()
 
     // Demo data has 1-day prob 0.58 (leans upward), 5-day prob 0.54 (no edge).
     const interpretation = await findInterpretation()

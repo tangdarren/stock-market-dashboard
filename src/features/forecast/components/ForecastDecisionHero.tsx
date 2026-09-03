@@ -7,7 +7,12 @@ import type {
   MarketResponse,
   Mode,
 } from '../api/types'
-import { formatDate, formatDateTime, formatPrice } from '../utils/format'
+import {
+  formatDate,
+  formatDateTime,
+  formatPrice,
+  formatProbability,
+} from '../utils/format'
 import {
   buildInterpretationSentence,
   computeHorizonOutlook,
@@ -67,52 +72,36 @@ export function ForecastDecisionHero({
             <Badge variant="info">Educational analysis</Badge>
             <ModeBadge mode={effectiveMode} />
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+          <h1 className="text-sm font-medium tracking-wide text-slate-400">
             What the model currently predicts
           </h1>
-          <p className="max-w-2xl text-sm text-slate-400">
-            A probabilistic direction outlook for SPY over the next trading day
-            and the next five trading sessions, derived from historical price,
-            momentum, volatility and volume patterns.
-          </p>
         </div>
 
-        <div className="flex flex-col items-start gap-3 sm:items-end">
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={!onRefresh || isRefreshing || demoBackendUnavailable}
-            className="inline-flex items-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.03] px-3 py-2 text-sm text-slate-200 transition-colors hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60"
-            aria-label="Refresh forecast data"
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={!onRefresh || isRefreshing || demoBackendUnavailable}
+          className="inline-flex shrink-0 items-center gap-2 self-start rounded-lg border border-white/[0.1] bg-white/[0.03] px-3 py-2 text-sm text-slate-200 transition-colors hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00FFB2]/60"
+          aria-label="Refresh forecast data"
+        >
+          <svg
+            aria-hidden
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={cn('h-4 w-4', isRefreshing && 'animate-spin')}
           >
-            <svg
-              aria-hidden
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className={cn('h-4 w-4', isRefreshing && 'animate-spin')}
-            >
-              <path d="M21 12a9 9 0 1 1-3-6.7" />
-              <path d="M21 4v5h-5" />
-            </svg>
-            {isRefreshing ? 'Refreshing…' : 'Refresh'}
-          </button>
-          {latestClose != null ? (
-            <p className="text-xs text-slate-500 sm:text-right">
-              SPY last close{' '}
-              <span className="font-mono font-medium text-slate-200">
-                ${formatPrice(latestClose)}
-              </span>
-            </p>
-          ) : null}
-        </div>
+            <path d="M21 12a9 9 0 1 1-3-6.7" />
+            <path d="M21 4v5h-5" />
+          </svg>
+          {isRefreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
       </div>
 
-      {/* --- Prediction body ------------------------------------------------ */}
-      <div className="mt-6">
+      <div className="mt-5">
         {modelIsMissing ? (
           <ModelUnavailableBanner reason={modelUnavailableReason ?? forecast?.reason} />
         ) : isLoading && !oneDayOutlook && !fiveDayOutlook ? (
@@ -122,19 +111,21 @@ export function ForecastDecisionHero({
         ) : (
           <>
             <p
-              className="text-base text-slate-100 sm:text-lg"
+              className="max-w-4xl text-2xl font-semibold tracking-tight text-white sm:text-3xl sm:leading-snug"
               data-testid="forecast-interpretation"
             >
               {interpretation}
             </p>
 
-            <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="mt-7 grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-5">
               <HorizonBlock
+                shortLabel="1-Day"
                 label="Next trading day"
                 outlook={oneDayOutlook}
                 forecast={forecast?.one_day ?? null}
               />
               <HorizonBlock
+                shortLabel="5-Day"
                 label="Next five trading sessions"
                 outlook={fiveDayOutlook}
                 forecast={forecast?.five_day ?? null}
@@ -144,8 +135,16 @@ export function ForecastDecisionHero({
         )}
       </div>
 
-      {/* --- Metadata footer ------------------------------------------------- */}
-      <dl className="mt-6 grid grid-cols-1 gap-3 border-t border-white/[0.05] pt-5 sm:grid-cols-2 lg:grid-cols-4">
+      {latestClose != null ? (
+        <p className="mt-6 text-xs text-slate-500">
+          SPY last close{' '}
+          <span className="font-mono text-sm font-medium text-slate-300">
+            ${formatPrice(latestClose)}
+          </span>
+        </p>
+      ) : null}
+
+      <dl className="mt-5 grid grid-cols-1 gap-x-4 gap-y-2 border-t border-white/[0.04] pt-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetaItem
           label="Latest completed session"
           value={featuresAsOf ? formatDate(featuresAsOf) : '—'}
@@ -180,7 +179,7 @@ export function ForecastDecisionHero({
         />
       </dl>
 
-      <p className="mt-5 text-xs text-slate-500">
+      <p className="mt-4 text-xs text-slate-500">
         Model output is probabilistic and may be wrong. This is an educational
         analysis, not financial advice.
       </p>
@@ -204,22 +203,27 @@ export function ForecastDecisionHero({
 // -----------------------------------------------------------------------------
 
 interface HorizonBlockProps {
+  shortLabel: string
   label: string
   outlook: HorizonOutlook | null
   forecast: HorizonForecast | null
 }
 
-function HorizonBlock({ label, outlook, forecast }: HorizonBlockProps) {
+function HorizonBlock({ shortLabel, label, outlook, forecast }: HorizonBlockProps) {
   if (!outlook || !forecast) {
     return (
-      <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-5">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          {label}
+      <article
+        aria-label={label}
+        className="rounded-2xl border border-white/[0.06] border-l-slate-500/40 bg-white/[0.02] p-5 sm:p-6"
+      >
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+          {shortLabel}
         </p>
-        <p className="mt-3 text-sm text-slate-400">
+        <p className="mt-1 text-sm text-slate-400">{label}</p>
+        <p className="mt-5 text-sm text-slate-400">
           Prediction unavailable for this horizon.
         </p>
-      </div>
+      </article>
     )
   }
 
@@ -230,38 +234,69 @@ function HorizonBlock({ label, outlook, forecast }: HorizonBlockProps) {
       : outlook.lean === 'down'
         ? 'text-red-400'
         : 'text-slate-200'
+  const accentBorder =
+    outlook.lean === 'up'
+      ? 'border-l-[#00FFB2]/65'
+      : outlook.lean === 'down'
+        ? 'border-l-red-400/65'
+        : 'border-l-slate-500/45'
 
   return (
-    <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-5">
+    <article
+      aria-label={label}
+      className={cn(
+        'rounded-2xl border border-white/[0.06] bg-white/[0.025] p-5 sm:p-6',
+        accentBorder,
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          {label}
-        </p>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+            {shortLabel}
+          </p>
+          <p className="mt-1 text-sm text-slate-300">{label}</p>
+        </div>
         <ConfidenceBadge outlook={outlook} />
       </div>
 
-      <div className="mt-4 flex items-center gap-3">
+      <div className="mt-5 flex items-end gap-3">
         {isNeutral ? (
           <NeutralIcon />
         ) : (
-          <DirectionIcon direction={outlook.lean === 'up' ? 'up' : 'down'} size="lg" />
+          <DirectionIcon
+            direction={outlook.lean === 'up' ? 'up' : 'down'}
+            size="lg"
+            className="mb-1"
+          />
         )}
         <div className="min-w-0">
-          <p className={cn('text-lg font-semibold sm:text-xl', accentText)}>
-            {outlook.headline}
+          <p
+            className={cn(
+              'font-mono text-3xl font-semibold tabular-nums tracking-tight sm:text-4xl',
+              accentText,
+            )}
+          >
+            {formatProbability(outlook.peakProb)}
           </p>
-          <p className="mt-1 text-xs text-slate-400">
-            {outlook.confidenceCopy}
+          <p className="mt-0.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
+            Probability
           </p>
         </div>
       </div>
 
+      <p className={cn('mt-4 text-base font-semibold sm:text-lg', accentText)}>
+        {outlook.headline}
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-slate-400">
+        {outlook.confidenceCopy}
+      </p>
+
       <ProbabilityBar
         probUp={outlook.probUp}
-        className="mt-4"
+        className="mt-5"
         label={`${label} — probability up vs down`}
       />
-    </div>
+    </article>
   )
 }
 
@@ -287,7 +322,7 @@ function NeutralIcon() {
       strokeWidth={2.5}
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="h-8 w-8 text-slate-300"
+      className="mb-1 h-8 w-8 text-slate-300"
     >
       <path d="M5 12h14" />
       <path d="M14 7l5 5-5 5" />
@@ -335,10 +370,10 @@ function MetaItem({
 }) {
   return (
     <div>
-      <dt className="text-[11px] uppercase tracking-wide text-slate-500">{label}</dt>
+      <dt className="text-[10px] uppercase tracking-wide text-slate-500">{label}</dt>
       <dd
         className={cn(
-          'mt-1 text-sm font-medium text-slate-200',
+          'mt-0.5 text-xs font-medium text-slate-400',
           mono && 'font-mono',
         )}
       >
